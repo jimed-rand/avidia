@@ -1,15 +1,10 @@
 #!/bin/bash
 set -e
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-NC='\033[0m'
-
-AVIDIA_JAR="/usr/bin/avidia.jar"
+# Path definitions
+AVIDIA_JAR_DIR="/usr/share/java/avidia"
+AVIDIA_JAR="$AVIDIA_JAR_DIR/avidia.jar"
+LANTERNA_JAR="$AVIDIA_JAR_DIR/lanterna.jar"
 JAVA_CMD="/usr/bin/java"
 ANDROID_HOME="/usr/share/android"
 CONFIG_FILE="/etc/avidia.conf"
@@ -17,17 +12,15 @@ CACHE_DIR="$HOME/.local/share/avidia/cache"
 CLI_TOOLS_ZIP="commandlinetools-linux-13114758_latest.zip"
 
 print_header() {
-    echo -e "${CYAN}${BOLD}"
     echo "================================================"
     echo "                  AVIDIA                        "
     echo "================================================"
-    echo -e "${NC}"
 }
 
 check_root() {
     if [[ $EUID -ne 0 ]]; then
-        echo -e "${RED}This operation requires root privileges.${NC}"
-        echo -e "Run with: ${CYAN}sudo $0 $1${NC}"
+        echo "This operation requires root privileges."
+        echo "Run with: sudo $0 $1"
         exit 1
     fi
 }
@@ -52,20 +45,26 @@ detect_package_manager() {
 
 verify_installation() {
     if [[ ! -f "$AVIDIA_JAR" ]]; then
-        echo -e "${RED}Avidia not installed.${NC}"
+        echo "Avidia not installed."
         echo "Avidia JAR should be at: $AVIDIA_JAR"
         exit 1
     fi
 
+    if [[ ! -f "$LANTERNA_JAR" ]]; then
+        echo "Lanterna library not found."
+        echo "Expected at: $LANTERNA_JAR"
+        exit 1
+    fi
+
     if [[ ! -d "$ANDROID_HOME" ]]; then
-        echo -e "${RED}Android environment not initialized.${NC}"
-        echo "Run: ${CYAN}sudo avidia initiate${NC}"
+        echo "Android environment not initialized."
+        echo "Run: sudo avidia initiate"
         exit 1
     fi
 
     if [[ ! -f "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]]; then
-        echo -e "${RED}Android SDK and CLI Tools not found.${NC}"
-        echo "Run: ${CYAN}sudo avidia initiate${NC}"
+        echo "Android SDK and CLI Tools not found."
+        echo "Run: sudo avidia initiate"
         exit 1
     fi
 }
@@ -79,26 +78,26 @@ setup_environment() {
 
 check_jdk() {
     if ! command -v javac &> /dev/null; then
-        echo -e "${RED}Java Development Kit (JDK) not found${NC}"
+        echo "Java Development Kit (JDK) not found"
         echo ""
         echo "Install OpenJDK Development Kit:"
 
         local pm=$(detect_package_manager)
         case $pm in
             pacman)
-                echo -e "  ${CYAN}sudo pacman -S jdk-openjdk${NC}"
+                echo "  sudo pacman -S jdk-openjdk"
                 ;;
             apt)
-                echo -e "  ${CYAN}sudo apt install openjdk-17-jdk${NC}"
+                echo "  sudo apt install openjdk-17-jdk"
                 ;;
             dnf)
-                echo -e "  ${CYAN}sudo dnf install java-17-openjdk-devel${NC}"
+                echo "  sudo dnf install java-17-openjdk-devel"
                 ;;
             zypper)
-                echo -e "  ${CYAN}sudo zypper install java-17-openjdk-devel${NC}"
+                echo "  sudo zypper install java-17-openjdk-devel"
                 ;;
             apk)
-                echo -e "  ${CYAN}sudo apk add openjdk17${NC}"
+                echo "  sudo apk add openjdk17"
                 ;;
             *)
                 echo "  Download from: https://adoptium.net/"
@@ -170,14 +169,14 @@ initiate_sdk() {
 
     print_header
 
-    echo -e "${CYAN}Starting system-wide Android environment initialization...${NC}"
+    echo "Starting system-wide Android environment initialization..."
     echo ""
 
     # Step 1: Create directory structure
-    echo -e "${YELLOW}Step 1: Creating directory structure${NC}"
+    echo "Step 1: Creating directory structure"
     mkdir -p "$ANDROID_HOME"
     chmod 755 "$ANDROID_HOME"
-    
+
     # Create cache directory for current user
     local ACTUAL_USER="${SUDO_USER:-$USER}"
     local ACTUAL_HOME=$(eval echo ~$ACTUAL_USER)
@@ -186,7 +185,7 @@ initiate_sdk() {
     chown -R $ACTUAL_USER:$(id -gn $ACTUAL_USER) "$ACTUAL_HOME/.local/share/avidia" 2>/dev/null || true
 
     # Step 2: Setup environment first
-    echo -e "${YELLOW}Step 2: Setting up environment variables${NC}"
+    echo "Step 2: Setting up environment variables"
     cat > /etc/profile.d/android-sdk.sh << 'EOF'
 # Android SDK Configuration
 export ANDROID_HOME="/usr/share/android"
@@ -194,48 +193,48 @@ export PATH="$PATH:$ANDROID_HOME/cmdline-tools/latest/bin"
 export PATH="$PATH:$ANDROID_HOME/platform-tools"
 export PATH="$PATH:$ANDROID_HOME/emulator"
 EOF
-    
+
     # Apply environment for current session
     source /etc/profile.d/android-sdk.sh
-    echo -e "${GREEN}Environment variables configured${NC}"
+    echo "Environment variables configured"
 
     # Step 3: Download or use cached CLI Tools
-    echo -e "${YELLOW}Step 3: Checking Android CLI Tools${NC}"
+    echo "Step 3: Checking Android CLI Tools"
     TEMP_DIR=$(mktemp -d)
     cd "$TEMP_DIR"
 
     if [[ -f "$USER_CACHE_DIR/$CLI_TOOLS_ZIP" ]]; then
-        echo -e "${GREEN}Using cached CLI Tools from $USER_CACHE_DIR${NC}"
+        echo "Using cached CLI Tools from $USER_CACHE_DIR"
         cp "$USER_CACHE_DIR/$CLI_TOOLS_ZIP" .
     else
-        echo -e "${CYAN}Downloading Android CLI Tools...${NC}"
+        echo "Downloading Android CLI Tools..."
         if command -v wget &> /dev/null; then
-            wget --show-progress -c https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip
+            wget -q --show-progress -c https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip
         elif command -v curl &> /dev/null; then
-            curl --progress-bar -O https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip
+            curl -s --progress-bar -O https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip
         else
-            echo -e "${RED}wget or curl required${NC}"
+            echo "wget or curl required"
             exit 1
         fi
-        
+
         # Cache the downloaded file
-        echo -e "${CYAN}Caching CLI Tools for future use...${NC}"
+        echo "Caching CLI Tools for future use..."
         cp "$CLI_TOOLS_ZIP" "$USER_CACHE_DIR/"
         chown $ACTUAL_USER:$(id -gn $ACTUAL_USER) "$USER_CACHE_DIR/$CLI_TOOLS_ZIP"
     fi
 
-    echo -e "${YELLOW}Step 4: Extracting tools${NC}"
+    echo "Step 4: Extracting tools"
     unzip -q commandlinetools-linux-13114758_latest.zip
     mkdir -p "$ANDROID_HOME/cmdline-tools/latest"
     mv cmdline-tools/* "$ANDROID_HOME/cmdline-tools/latest/"
     rm -rf cmdline-tools
 
-    echo -e "${YELLOW}Step 5: Setting permissions${NC}"
+    echo "Step 5: Setting permissions"
     chmod -R 755 "$ANDROID_HOME/cmdline-tools"
     chown -R root:root "$ANDROID_HOME"
 
     # Step 6: Select Android SDK Level
-    echo -e "${YELLOW}Step 6: Select Android SDK Level${NC}"
+    echo "Step 6: Select Android SDK Level"
     echo "Available Android versions:"
     echo "  36 - Android 16"
     echo "  35 - Android 15"
@@ -253,7 +252,7 @@ EOF
 
     # Step 7: Select system image type (GMS or AOSP)
     echo ""
-    echo -e "${YELLOW}Step 7: Select System Image Type${NC}"
+    echo "Step 7: Select System Image Type"
     echo "Available options:"
     echo "  1) GMS (Google Play Services) - Includes Google Play Store and services"
     echo "  2) AOSP (Android Open Source Project) - Pure Android without Google services"
@@ -270,21 +269,21 @@ EOF
         IMAGE_DESC="AOSP"
     fi
 
-    echo -e "${GREEN}Selected: $IMAGE_DESC${NC}"
+    echo "Selected: $IMAGE_DESC"
 
-    echo -e "${YELLOW}Step 8: Installing essential packages${NC}"
+    echo "Step 8: Installing essential packages"
     echo "This may take several minutes..."
 
-    "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" --verbose \
+    "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" \
         "platform-tools" \
         "platforms;android-$SDK_LEVEL" \
         "system-images;android-$SDK_LEVEL;$IMAGE_TYPE;x86_64" \
         "emulator"
 
-    echo -e "${YELLOW}Step 9: Accepting licenses${NC}"
+    echo "Step 9: Accepting licenses"
     yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" --licenses
 
-    echo -e "${YELLOW}Step 10: Creating configuration file${NC}"
+    echo "Step 10: Creating configuration file"
     cat > "$CONFIG_FILE" << EOF
 # Avidia Configuration
 SDK_INSTALLED=true
@@ -297,7 +296,7 @@ EOF
 
     rm -rf "$TEMP_DIR"
 
-    echo -e "${GREEN}================================================"
+    echo "================================================"
     echo "INITIALIZATION COMPLETE"
     echo "================================================"
     echo ""
@@ -312,26 +311,26 @@ EOF
     suggest_kvm_installation
 
     echo ""
-    echo -e "${YELLOW}Note: Run avidia suggest-kvm anytime to see KVM installation instructions."
+    echo "Note: Run 'avidia suggest-kvm' anytime to see KVM installation instructions."
     echo ""
-    echo -e "${GREEN}Starting interactive mode in 30 seconds...${NC}"
-    echo -e "${CYAN}Press Ctrl+C to cancel${NC}"
-    
+    echo "Starting interactive mode in 30 seconds..."
+    echo "Press Ctrl+C to cancel"
+
     for i in {30..1}; do
         echo -ne "\rCountdown: $i seconds remaining... "
         sleep 1
     done
     echo ""
-    
+
     # Launch TUI as the actual user, not root
-    echo -e "${CYAN}Launching Avidia TUI...${NC}"
-    sudo -u $ACTUAL_USER bash -c "source /etc/profile.d/android-sdk.sh && $JAVA_CMD -jar $AVIDIA_JAR tui"
+    echo "Launching Avidia TUI..."
+    sudo -u $ACTUAL_USER bash -c "source /etc/profile.d/android-sdk.sh && $JAVA_CMD -cp \"$AVIDIA_JAR:$LANTERNA_JAR\" org.jimedrand.avidia.avidia tui"
 }
 
 clean_sdk() {
     check_root "clean"
 
-    echo -e "${RED}================================================"
+    echo "================================================"
     echo "WARNING: ANDROID ENVIRONMENT REMOVAL"
     echo "================================================"
     echo ""
@@ -343,41 +342,41 @@ clean_sdk() {
     echo "The following will NOT be removed:"
     echo "  - Virtual device configurations (~/.android/avd/)"
     echo "  - Cached CLI Tools (~/.local/share/avidia/cache/)"
-    echo -e "================================================${NC}"
+    echo "================================================"
 
     read -p "Type 'CONFIRM' to proceed: " confirmation
     if [[ "$confirmation" != "CONFIRM" ]]; then
-        echo -e "${YELLOW}Cleanup cancelled.${NC}"
+        echo "Cleanup cancelled."
         exit 0
     fi
 
-    echo -e "${YELLOW}Removing Android environment...${NC}"
+    echo "Removing Android environment..."
 
     if [[ -d "$ANDROID_HOME" ]]; then
         rm -rf "$ANDROID_HOME"
-        echo -e "${GREEN}Android SDK and CLI Tools removed.${NC}"
+        echo "Android SDK and CLI Tools removed."
     fi
 
     if [[ -f "/etc/profile.d/android-sdk.sh" ]]; then
         rm -f /etc/profile.d/android-sdk.sh
-        echo -e "${GREEN}Environment configuration removed.${NC}"
+        echo "Environment configuration removed."
     fi
 
     if [[ -f "$CONFIG_FILE" ]]; then
         rm -f "$CONFIG_FILE"
-        echo -e "${GREEN}Configuration file removed.${NC}"
+        echo "Configuration file removed."
     fi
 
-    echo -e "${GREEN}================================================"
+    echo "================================================"
     echo "CLEANUP COMPLETE"
     echo "================================================"
     echo ""
     echo "Android environment has been removed from the system."
-    echo "To reinstall, run: sudo avidia initiate
+    echo "To reinstall, run: sudo avidia initiate"
     echo ""
     echo "Note: Cached CLI Tools are preserved in ~/.local/share/avidia/cache/"
     echo "      Delete manually if you want to remove them."
-    echo -e "================================================${NC}"
+    echo "================================================"
 }
 
 run_core() {
@@ -385,11 +384,11 @@ run_core() {
     setup_environment
 
     if [[ ! -f "$JAVA_CMD" ]]; then
-        echo -e "${RED}Java runtime not found${NC}"
+        echo "Java runtime not found"
         exit 1
     fi
 
-    "$JAVA_CMD" -jar "$AVIDIA_JAR" "$@"
+    "$JAVA_CMD" -cp "$AVIDIA_JAR:$LANTERNA_JAR" org.jimedrand.avidia.avidia "$@"
 }
 
 quick_operations() {
@@ -429,7 +428,7 @@ show_help() {
     echo ""
     echo "Usage: avidia [command] [options]"
     echo ""
-    echo -e "${YELLOW}Core Commands:${NC}"
+    echo "Core Commands:"
     echo "  (no command)        Interactive mode"
     echo "  list                List virtual devices"
     echo "  create <name>       Create virtual device"
@@ -437,30 +436,31 @@ show_help() {
     echo "  delete <name>       Remove virtual device"
     echo "  install-sdk <api>   Install additional SDK"
     echo ""
-    echo -e "${YELLOW}System Commands:${NC}"
+    echo "System Commands:"
     echo "  initiate            Initialize Android environment system-wide"
     echo "  clean               Remove Android environment (requires confirmation)"
     echo "  suggest-kvm         Show KVM installation recommendations"
     echo ""
-    echo -e "${YELLOW}Quick Commands:${NC}"
+    echo "Quick Commands:"
     echo "  quick-list          Fast device listing"
     echo "  quick-start <name>  Start device in background"
     echo "  quick-stop          Stop all devices"
     echo "  quick-info          System information"
     echo ""
-    echo -e "${YELLOW}Examples:${NC}"
-    echo "  sudo avidia initiate
-    echo "  avidia
-    echo "  avidia create mydevice
-    echo "  avidia quick-start mydevice
+    echo "Examples:"
+    echo "  sudo avidia initiate"
+    echo "  avidia"
+    echo "  avidia create mydevice"
+    echo "  avidia quick-start mydevice"
+    echo "  avidia suggest-kvm"
     echo ""
-    echo -e "${YELLOW}Requirements:${NC}"
+    echo "Requirements:"
     echo "  - OpenJDK 17 or newer (JDK, not JRE)"
     echo "  - QEMU/KVM with libvirt (recommended for performance)"
     echo "  - 8GB+ RAM for AVD usages"
     echo ""
-    echo -e "${YELLOW}Note:${NC} Run 'sudo avidia initiate' first to initialize Android environment"
-    echo -e "================================================${NC}"
+    echo "Note: Run 'sudo avidia initiate' first to initialize Android environment"
+    echo "================================================"
 }
 
 main() {
@@ -554,7 +554,7 @@ main() {
             run_core "tui"
             ;;
         *)
-            echo -e "${RED}Unknown command: $1${NC}"
+            echo "Unknown command: $1"
             echo "Run 'avidia help' for usage."
             exit 1
             ;;
