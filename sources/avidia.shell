@@ -1,0 +1,524 @@
+#!/bin/bash
+set -e
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+AVIDIA_JAR="/usr/bin/avidia.jar"
+JAVA_CMD="/usr/bin/java"
+ANDROID_HOME="/usr/share/android"
+CONFIG_FILE="/etc/avidia.conf"
+
+print_header() {
+    echo -e "${CYAN}${BOLD}"
+    echo "================================================"
+    echo "                  AVIDIA                        "
+    echo "================================================"
+    echo -e "${NC}"
+}
+
+check_root() {
+    if [[ $EUID -ne 0 ]]; then
+        echo -e "${RED}This operation requires root privileges.${NC}"
+        echo -e "Run with: ${CYAN}sudo $0 $1${NC}"
+        exit 1
+    fi
+}
+
+detect_package_manager() {
+    if command -v pacman &> /dev/null; then
+        echo "pacman"
+    elif command -v apt &> /dev/null; then
+        echo "apt"
+    elif command -v dnf &> /dev/null; then
+        echo "dnf"
+    elif command -v yum &> /dev/null; then
+        echo "yum"
+    elif command -v zypper &> /dev/null; then
+        echo "zypper"
+    elif command -v apk &> /dev/null; then
+        echo "apk"
+    else
+        echo "unknown"
+    fi
+}
+
+verify_installation() {
+    if [[ ! -f "$AVIDIA_JAR" ]]; then
+        echo -e "${RED}Avidia core not installed.${NC}"
+        echo "Avidia JAR should be at: $AVIDIA_JAR"
+        exit 1
+    fi
+
+    if [[ ! -d "$ANDROID_HOME" ]]; then
+        echo -e "${RED}Android SDK not initialized.${NC}"
+        echo "Run: ${CYAN}sudo avidia initiate${NC}"
+        exit 1
+    fi
+
+    if [[ ! -f "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]]; then
+        echo -e "${RED}Android SDK tools not found.${NC}"
+        echo "Run: ${CYAN}sudo avidia initiate${NC}"
+        exit 1
+    fi
+}
+
+setup_environment() {
+    export ANDROID_HOME="$ANDROID_HOME"
+    export PATH="$PATH:$ANDROID_HOME/cmdline-tools/latest/bin"
+    export PATH="$PATH:$ANDROID_HOME/platform-tools"
+    export PATH="$PATH:$ANDROID_HOME/emulator"
+}
+
+check_jdk() {
+    if ! command -v javac &> /dev/null; then
+        echo -e "${RED}Java Development Kit (JDK) not found${NC}"
+        echo ""
+        echo "Install OpenJDK Development Kit:"
+
+        local pm=$(detect_package_manager)
+        case $pm in
+            pacman)
+                echo -e "  ${CYAN}sudo pacman -S jdk-openjdk${NC}"
+                ;;
+            apt)
+                echo -e "  ${CYAN}sudo apt install openjdk-17-jdk${NC}"
+                ;;
+            dnf)
+                echo -e "  ${CYAN}sudo dnf install java-17-openjdk-devel${NC}"
+                ;;
+            zypper)
+                echo -e "  ${CYAN}sudo zypper install java-17-openjdk-devel${NC}"
+                ;;
+            apk)
+                echo -e "  ${CYAN}sudo apk add openjdk17${NC}"
+                ;;
+            *)
+                echo "  Download from: https://adoptium.net/"
+                ;;
+        esac
+        exit 1
+    fi
+}
+
+check_virtualization_support() {
+    if [[ "$(uname -s)" = "Linux" ]]; then
+        echo -e "${CYAN}Checking virtualization support...${NC}"
+
+        if ! grep -q -E '(vmx|svm)' /proc/cpuinfo; then
+            echo -e "${YELLOW}Warning: CPU virtualization extensions not detected.${NC}"
+            echo "Virtualization may be disabled in BIOS/UEFI settings."
+            echo "Check your BIOS/UEFI and enable Intel VT-x or AMD-V."
+            return 1
+        fi
+
+        if [[ ! -e /dev/kvm ]]; then
+            echo -e "${YELLOW}Warning: KVM (/dev/kvm) not available.${NC}"
+            echo "Android Emulator will be much slower without KVM acceleration."
+            echo ""
+            echo "For optimal performance, install QEMU/KVM for your distribution:"
+            echo ""
+
+            local pm=$(detect_package_manager)
+            case $pm in
+                pacman)
+                    # Arch Linux, Manjaro
+                    echo -e "  ${CYAN}sudo pacman -S qemu-full libvirt${NC}"
+                    echo -e "  ${CYAN}sudo systemctl enable --now libvirtd${NC}"
+                    echo -e "  ${CYAN}sudo usermod -aG kvm \$USER${NC}"
+                    echo "  Documentation: https://wiki.archlinux.org/title/KVM"
+                    ;;
+                apt)
+                    # Debian, Ubuntu
+                    echo -e "  ${CYAN}sudo apt install qemu-kvm libvirt-daemon-system${NC}"
+                    echo -e "  ${CYAN}sudo systemctl enable --now libvirtd${NC}"
+                    echo -e "  ${CYAN}sudo usermod -aG kvm \$USER${NC}"
+                    echo "  Documentation: https://wiki.debian.org/KVM"
+                    ;;
+                dnf)
+                    # Fedora
+                    echo -e "  ${CYAN}sudo dnf install @virtualization${NC}"
+                    echo -e "  ${CYAN}sudo systemctl enable --now libvirtd${NC}"
+                    echo -e "  ${CYAN}sudo usermod -aG kvm \$USER${NC}"
+                    echo "  Documentation: https://docs.fedoraproject.org/en-US/quick-docs/using-kvm/"
+                    ;;
+                zypper)
+                    # openSUSE, SLE
+                    echo -e "  ${CYAN}sudo zypper install patterns-server-kvm_server${NC}"
+                    echo -e "  ${CYAN}sudo systemctl enable --now libvirtd${NC}"
+                    echo -e "  ${CYAN}sudo usermod -aG kvm \$USER${NC}"
+                    echo "  Documentation: https://doc.opensuse.org/documentation/leap/virtualization/html/book-virt/cha-vt-installation.html"
+                    ;;
+                apk)
+                    # Alpine Linux
+                    echo -e "  ${CYAN}sudo apk add qemu-system-x86_64 libvirt${NC}"
+                    echo -e "  ${CYAN}sudo rc-update add libvirtd${NC}"
+                    echo -e "  ${CYAN}sudo addgroup \$USER kvm${NC}"
+                    echo "  Documentation: https://wiki.alpinelinux.org/wiki/Qemu"
+                    ;;
+                *)
+                    # Other distributions or init systems
+                    echo "  For other distributions or non-systemd init systems:"
+                    echo "  - Artix (runit): Install qemu-full and libvirt, then enable service"
+                    echo "  - Gentoo (OpenRC): Install app-emulation/qemu and app-emulation/libvirt"
+                    echo "  - Void Linux: Install qemu and libvirt packages"
+                    echo "  Consult your distribution's documentation for KVM setup."
+                    ;;
+            esac
+
+            echo ""
+            echo "After installation, log out and log back in for group changes to take effect."
+            return 1
+        fi
+
+        if ! groups | grep -q kvm; then
+            echo -e "${YELLOW}Warning: User not in kvm group.${NC}"
+            echo "Add user to kvm group:"
+            echo -e "  ${CYAN}sudo usermod -aG kvm \$USER${NC}"
+            echo "Then log out and log back in."
+            return 1
+        fi
+
+        echo -e "${GREEN}Virtualization support detected: KVM acceleration available.${NC}"
+        return 0
+    else
+        echo -e "${YELLOW}Virtualization check only available on Linux.${NC}"
+        return 0
+    fi
+}
+
+initiate_sdk() {
+    check_root "initiate"
+    check_jdk
+    check_virtualization_support
+
+    print_header
+
+    echo -e "${CYAN}Starting system-wide Android SDK installation...${NC}"
+    echo ""
+
+    echo -e "${YELLOW}Step 1: Creating directory structure${NC}"
+    mkdir -p "$ANDROID_HOME"
+    chmod 755 "$ANDROID_HOME"
+
+    echo -e "${YELLOW}Step 2: Downloading Android CLI Tools${NC}"
+    TEMP_DIR=$(mktemp -d)
+    cd "$TEMP_DIR"
+
+    if command -v wget &> /dev/null; then
+        wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+    elif command -v curl &> /dev/null; then
+        curl -s -O https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+    else
+        echo -e "${RED}wget or curl required${NC}"
+        exit 1
+    fi
+
+    echo -e "${YELLOW}Step 3: Extracting tools${NC}"
+    unzip -q commandlinetools-linux-9477386_latest.zip
+    mkdir -p "$ANDROID_HOME/cmdline-tools/latest"
+    mv cmdline-tools/* "$ANDROID_HOME/cmdline-tools/latest/"
+    rm -rf cmdline-tools
+
+    echo -e "${YELLOW}Step 4: Setting permissions${NC}"
+    chmod -R 755 "$ANDROID_HOME/cmdline-tools"
+    chown -R root:root "$ANDROID_HOME"
+
+    echo -e "${YELLOW}Step 5: Select Android SDK Level${NC}"
+    echo "Available Android versions for development:"
+    echo "  36 - Android 16"
+    echo "  35 - Android 15"
+    echo "  34 - Android 14"
+    echo "  33 - Android 13"
+    echo "  32 - Android 12L"
+    echo "  31 - Android 12"
+    echo "  30 - Android 11"
+    echo "  29 - Android 10"
+    echo "  Older Android API Level (1-28)"
+    echo ""
+    echo -n "Enter SDK level (default: 36): "
+    read SDK_LEVEL
+    SDK_LEVEL="${SDK_LEVEL:-36}"
+
+    echo -e "${YELLOW}Step 6: Installing essential packages${NC}"
+    echo "This may take several minutes..."
+
+    "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" \
+        "platform-tools" \
+        "platforms;android-$SDK_LEVEL" \
+        "system-images;android-$SDK_LEVEL;google_apis;x86_64" \
+        "emulator"
+
+    echo -e "${YELLOW}Step 7: Accepting licenses${NC}"
+    yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" --licenses
+
+    echo -e "${YELLOW}Step 8: Creating system configuration${NC}"
+
+    cat > /etc/profile.d/android-sdk.sh << EOF
+# Android SDK Configuration
+export ANDROID_HOME="$ANDROID_HOME"
+export PATH="\$PATH:\$ANDROID_HOME/cmdline-tools/latest/bin"
+export PATH="\$PATH:\$ANDROID_HOME/platform-tools"
+export PATH="\$PATH:\$ANDROID_HOME/emulator"
+EOF
+
+    cat > "$CONFIG_FILE" << EOF
+# Avidia Configuration
+SDK_INSTALLED=true
+SDK_PATH="$ANDROID_HOME"
+SDK_LEVEL="$SDK_LEVEL"
+INIT_DATE="$(date)"
+EOF
+
+    echo -e "${GREEN}================================================"
+    echo "INSTALLATION COMPLETE"
+    echo "================================================"
+    echo ""
+    echo "Android SDK has been installed to: $ANDROID_HOME"
+    echo "Android SDK Level: $SDK_LEVEL"
+    echo ""
+    echo "Important: Log out and log back in to apply environment changes."
+    echo ""
+    echo "After logging back in, you can:"
+    echo "  - Run interactive mode: ${CYAN}avidia${NC}"
+    echo "  - List virtual devices: ${CYAN}avidia list${NC}"
+    echo "  - Create a device: ${CYAN}avidia create <name>${NC}"
+    echo ""
+    echo -e "${YELLOW}Note:${NC} For optimal performance, ensure KVM acceleration is enabled."
+    echo "Run ${CYAN}avidia check-virt${NC} to verify virtualization support."
+    echo -e "================================================${NC}"
+
+    rm -rf "$TEMP_DIR"
+}
+
+clean_sdk() {
+    check_root "clean"
+
+    echo -e "${RED}================================================"
+    echo "WARNING: SDK REMOVAL"
+    echo "================================================"
+    echo ""
+    echo "This will remove the Android SDK from:"
+    echo "  $ANDROID_HOME"
+    echo ""
+    echo "Virtual device configurations (~/.android/avd/) will NOT be removed."
+    echo -e "================================================${NC}"
+
+    read -p "Type 'CONFIRM' to proceed: " confirmation
+    if [[ "$confirmation" != "CONFIRM" ]]; then
+        echo -e "${YELLOW}Cleanup cancelled.${NC}"
+        exit 0
+    fi
+
+    echo -e "${YELLOW}Removing Android SDK...${NC}"
+
+    if [[ -d "$ANDROID_HOME" ]]; then
+        rm -rf "$ANDROID_HOME"
+        echo -e "${GREEN}SDK directory removed.${NC}"
+    fi
+
+    if [[ -f "/etc/profile.d/android-sdk.sh" ]]; then
+        rm -f /etc/profile.d/android-sdk.sh
+        echo -e "${GREEN}Environment configuration removed.${NC}"
+    fi
+
+    if [[ -f "$CONFIG_FILE" ]]; then
+        rm -f "$CONFIG_FILE"
+        echo -e "${GREEN}Configuration file removed.${NC}"
+    fi
+
+    echo -e "${GREEN}================================================"
+    echo "CLEANUP COMPLETE"
+    echo "================================================"
+    echo ""
+    echo "Android SDK has been removed from the system."
+    echo "To reinstall, run: ${CYAN}sudo avidia initiate${NC}"
+    echo -e "================================================${NC}"
+}
+
+run_core() {
+    verify_installation
+    setup_environment
+
+    if [[ ! -f "$JAVA_CMD" ]]; then
+        echo -e "${RED}Java runtime not found${NC}"
+        exit 1
+    fi
+
+    "$JAVA_CMD" -jar "$AVIDIA_JAR" "$@"
+}
+
+quick_operations() {
+    verify_installation
+    setup_environment
+
+    case "$1" in
+        list)
+            "$ANDROID_HOME/emulator/emulator" -list-avds
+            ;;
+        start)
+            if [[ -z "$2" ]]; then
+                echo "Usage: avidia quick-start <avd-name>"
+                exit 1
+            fi
+            nohup "$ANDROID_HOME/emulator/emulator" -avd "$2" -no-snapshot-load > /dev/null 2>&1 &
+            echo "AVD started in background"
+            ;;
+        stop)
+            pkill -f "emulator.*-avd" 2>/dev/null && echo "Emulators stopped" || echo "No emulators running"
+            ;;
+        info)
+            echo "Android SDK: $ANDROID_HOME"
+            if [[ -f "$CONFIG_FILE" ]]; then
+                source "$CONFIG_FILE" 2>/dev/null
+                echo "SDK Level: ${SDK_LEVEL:-Not specified}"
+            fi
+            echo "Java: $(java -version 2>&1 | head -n 1)"
+            echo "System: $(uname -s) $(uname -m)"
+            ;;
+    esac
+}
+
+show_help() {
+    print_header
+    echo ""
+    echo "Usage: avidia [command] [options]"
+    echo ""
+    echo -e "${YELLOW}Core Commands:${NC}"
+    echo "  (no command)        Interactive mode"
+    echo "  list                List virtual devices"
+    echo "  create <name>       Create virtual device"
+    echo "  start <name>        Start virtual device"
+    echo "  delete <name>       Remove virtual device"
+    echo "  install-sdk <api>   Install additional SDK"
+    echo ""
+    echo -e "${YELLOW}System Commands:${NC}"
+    echo "  initiate            Install Android SDK system-wide"
+    echo "  clean               Remove SDK (requires confirmation)"
+    echo "  check-virt          Check virtualization support"
+    echo ""
+    echo -e "${YELLOW}Quick Commands:${NC}"
+    echo "  quick-list          Fast device listing"
+    echo "  quick-start <name>  Start device in background"
+    echo "  quick-stop          Stop all devices"
+    echo "  quick-info          System information"
+    echo ""
+    echo -e "${YELLOW}Examples:${NC}"
+    echo "  ${CYAN}sudo avidia initiate${NC}"
+    echo "  ${CYAN}avidia${NC}"
+    echo "  ${CYAN}avidia create mydevice${NC}"
+    echo "  ${CYAN}avidia quick-start mydevice${NC}"
+    echo ""
+    echo -e "${YELLOW}Requirements:${NC}"
+    echo "  - OpenJDK 17 or newer (JDK, not JRE)"
+    echo "  - QEMU/KVM (recommended for performance)"
+    echo "  - 4GB+ RAM for Android emulator"
+    echo ""
+    echo -e "${YELLOW}Note:${NC} Run 'sudo avidia initiate' first to install Android SDK"
+    echo -e "================================================${NC}"
+}
+
+main() {
+    case "${1:-}" in
+        initiate)
+            initiate_sdk
+            ;;
+        clean)
+            clean_sdk
+            ;;
+        check-virt)
+            check_virtualization_support
+            ;;
+        quick-list)
+            quick_operations "list"
+            ;;
+        quick-start)
+            quick_operations "start" "$2"
+            ;;
+        quick-stop)
+            quick_operations "stop"
+            ;;
+        quick-info)
+            quick_operations "info"
+            ;;
+        list)
+            run_core "list"
+            ;;
+        create)
+            if [[ -z "$2" ]]; then
+                echo "Usage: avidia create <name> [--api <level>] [--abi <type>]"
+                exit 1
+            fi
+
+            if [[ -f "$CONFIG_FILE" ]]; then
+                source "$CONFIG_FILE" 2>/dev/null
+            fi
+
+            API="${SDK_LEVEL:-34}"
+            ABI="x86_64"
+            DEVICE="pixel_6"
+            STORAGE="4096"
+
+            for i in "${@:3}"; do
+                case $i in
+                    --api=*)
+                        API="${i#*=}"
+                        ;;
+                    --abi=*)
+                        ABI="${i#*=}"
+                        ;;
+                    --device=*)
+                        DEVICE="${i#*=}"
+                        ;;
+                    --storage=*)
+                        STORAGE="${i#*=}"
+                        ;;
+                esac
+            done
+
+            run_core "create" "$2" "$API" "$ABI" "$DEVICE" "$STORAGE"
+            ;;
+        start)
+            if [[ -z "$2" ]]; then
+                echo "Usage: avidia start <name>"
+                exit 1
+            fi
+            run_core "start" "$2"
+            ;;
+        delete)
+            if [[ -z "$2" ]]; then
+                echo "Usage: avidia delete <name>"
+                exit 1
+            fi
+            run_core "delete" "$2"
+            ;;
+        install-sdk)
+            if [[ -z "$2" ]]; then
+                echo "Usage: avidia install-sdk <api-level> [abi]"
+                exit 1
+            fi
+            API="$2"
+            ABI="${3:-x86_64}"
+            PKG="system-images;android-${API};google_apis;${ABI}"
+            run_core "install-sdk" "$PKG"
+            ;;
+        help|--help|-h)
+            show_help
+            ;;
+        "")
+            run_core "tui"
+            ;;
+        *)
+            echo -e "${RED}Unknown command: $1${NC}"
+            echo "Run '${CYAN}avidia help${NC}' for usage."
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"
