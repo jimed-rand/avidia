@@ -312,7 +312,7 @@ EOF
     suggest_kvm_installation
 
     echo ""
-    echo -e "${YELLOW}Note: ${NC}Run ${CYAN}avidia suggest-kvm${NC} anytime to see KVM installation instructions."
+    echo -e "${YELLOW}Note: Run avidia suggest-kvm anytime to see KVM installation instructions."
     echo ""
     echo -e "${GREEN}Starting interactive mode in 30 seconds...${NC}"
     echo -e "${CYAN}Press Ctrl+C to cancel${NC}"
@@ -373,7 +373,7 @@ clean_sdk() {
     echo "================================================"
     echo ""
     echo "Android environment has been removed from the system."
-    echo "To reinstall, run: ${CYAN}sudo avidia initiate${NC}"
+    echo "To reinstall, run: sudo avidia initiate
     echo ""
     echo "Note: Cached CLI Tools are preserved in ~/.local/share/avidia/cache/"
     echo "      Delete manually if you want to remove them."
@@ -449,11 +449,10 @@ show_help() {
     echo "  quick-info          System information"
     echo ""
     echo -e "${YELLOW}Examples:${NC}"
-    echo "  ${CYAN}sudo avidia initiate${NC}"
-    echo "  ${CYAN}avidia${NC}"
-    echo "  ${CYAN}avidia create mydevice${NC}"
-    echo "  ${CYAN}avidia quick-start mydevice${NC}"
-    echo "  ${CYAN}avidia suggest-kvm${NC}"
+    echo "  sudo avidia initiate
+    echo "  avidia
+    echo "  avidia create mydevice
+    echo "  avidia quick-start mydevice
     echo ""
     echo -e "${YELLOW}Requirements:${NC}"
     echo "  - OpenJDK 17 or newer (JDK, not JRE)"
