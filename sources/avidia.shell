@@ -195,7 +195,7 @@ initiate_sdk() {
     fi
 
     echo -e "${YELLOW}Step 3: Extracting tools${NC}"
-    unzip -q commandlinetools-linux-9477386_latest.zip
+    unzip -q commandlinetools-linux-13114758_latest.zip
     mkdir -p "$ANDROID_HOME/cmdline-tools/latest"
     mv cmdline-tools/* "$ANDROID_HOME/cmdline-tools/latest/"
     rm -rf cmdline-tools
