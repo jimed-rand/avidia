@@ -10,9 +10,11 @@ ANDROID_HOME="/usr/share/android"
 CONFIG_FILE="/etc/avidia.conf"
 CACHE_DIR="$HOME/.local/share/avidia/cache"
 CLI_TOOLS_ZIP="commandlinetools-linux-13114758_latest.zip"
-AVD_MANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager"
-SDK_MANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-EMULATOR="$ANDROID_HOME/emulator/emulator"
+
+# Tool paths (akan diverifikasi nanti)
+AVD_MANAGER=""
+SDK_MANAGER=""
+EMULATOR=""
 
 print_header() {
     echo "================================================"
@@ -65,9 +67,20 @@ verify_installation() {
         exit 1
     fi
 
+    # Verifikasi tools
+    AVD_MANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager"
+    SDK_MANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+    EMULATOR="$ANDROID_HOME/emulator/emulator"
+    
     if [[ ! -f "$SDK_MANAGER" ]]; then
-        echo "Android SDK and CLI Tools not found."
+        echo "Android SDK Manager not found."
         echo "Run: sudo avidia initiate"
+        exit 1
+    fi
+    
+    if [[ ! -f "$EMULATOR" ]]; then
+        echo "Android Emulator not found."
+        echo "Run: sudo avidia repair"
         exit 1
     fi
 }
@@ -77,6 +90,11 @@ setup_environment() {
     export PATH="$PATH:$ANDROID_HOME/cmdline-tools/latest/bin"
     export PATH="$PATH:$ANDROID_HOME/platform-tools"
     export PATH="$PATH:$ANDROID_HOME/emulator"
+    
+    # Update tool paths after setting environment
+    AVD_MANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager"
+    SDK_MANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+    EMULATOR="$ANDROID_HOME/emulator/emulator"
 }
 
 check_jdk() {
@@ -166,141 +184,334 @@ suggest_kvm_installation() {
     echo "========================================"
 }
 
-# Fungsi baru untuk mengecek dan menginstal package yang diperlukan
-install_required_packages() {
-    local SDK_LEVEL="$1"
-    local IMAGE_TYPE="$2"
+# Fungsi untuk install paket dasar
+install_basic_packages() {
+    echo "Installing basic Android tools..."
     
-    echo "Step 8: Installing essential packages"
-    echo "This may take several minutes..."
-
-    # Install platform-tools dan emulator terlebih dahulu
+    # Install platform-tools dan emulator
     "$SDK_MANAGER" --sdk_root="$ANDROID_HOME" \
         "platform-tools" \
         "emulator"
-
-    # Coba install platform untuk SDK level yang diminta
-    echo "Installing platform for API level $SDK_LEVEL..."
-    "$SDK_MANAGER" --sdk_root="$ANDROID_HOME" \
-        "platforms;android-$SDK_LEVEL"
-
-    # System image bisa diinstall nanti melalui TUI
-    echo "Note: System images can be installed later via 'avidia install-sdk'"
-    echo "or through the TUI menu."
-
-    echo "Step 9: Accepting licenses"
-    yes | "$SDK_MANAGER" --sdk_root="$ANDROID_HOME" --licenses
+    
+    echo "Basic tools installed successfully!"
 }
 
-# Fungsi baru untuk list AVD
+# Fungsi untuk repair/update installation
+repair_installation() {
+    check_root "repair"
+    print_header
+    
+    echo "Repairing Android SDK installation..."
+    echo ""
+    
+    if [[ ! -d "$ANDROID_HOME" ]]; then
+        echo "Android SDK not found at: $ANDROID_HOME"
+        echo "Run 'sudo avidia initiate' first"
+        exit 1
+    fi
+    
+    setup_environment
+    
+    # Update semua paket yang ada
+    echo "Updating all installed packages..."
+    "$SDK_MANAGER" --sdk_root="$ANDROID_HOME" --update
+    
+    # Install paket dasar jika belum ada
+    install_basic_packages
+    
+    # Accept licenses
+    echo "Accepting licenses..."
+    yes | "$SDK_MANAGER" --sdk_root="$ANDROID_HOME" --licenses
+    
+    echo "================================================"
+    echo "REPAIR COMPLETE"
+    echo "================================================"
+}
+
+# Fungsi untuk list AVD
 list_avds() {
+    verify_installation
+    setup_environment
+    
     if [[ -f "$EMULATOR" ]]; then
         "$EMULATOR" -list-avds
     else
-        echo "Emulator not found at: $EMULATOR"
-        echo "Run: sudo avidia initiate"
+        echo "Error: Emulator not found at $EMULATOR"
+        echo "Run: sudo avidia repair"
         exit 1
     fi
 }
 
-# Fungsi baru untuk create AVD
+# Fungsi untuk create AVD
 create_avd() {
-    local NAME="$1"
-    local SYSTEM_IMAGE="$2"
-    local DEVICE="$3"
+    verify_installation
+    setup_environment
     
-    if [[ -z "$NAME" ]] || [[ -z "$SYSTEM_IMAGE" ]] || [[ -z "$DEVICE" ]]; then
-        echo "Usage: avidia create-avd <name> <system_image> <device>"
-        echo "Example: avidia create-avd Pixel_5_API_34 \"system-images;android-34;google_apis;x86_64\" pixel_5"
+    if [[ -z "$1" ]]; then
+        echo "Usage: avidia create <avd-name>"
+        echo "Example: avidia create Pixel_5_API_34"
+        echo ""
+        echo "Additional options:"
+        echo "  --device=<device-id>    Device definition (default: pixel_5)"
+        echo "  --package=<package>     System image package"
         exit 1
     fi
     
-    if [[ ! -f "$AVD_MANAGER" ]]; then
-        echo "AVD Manager not found at: $AVD_MANAGER"
-        echo "Run: sudo avidia initiate"
-        exit 1
+    local AVD_NAME="$1"
+    local DEVICE="pixel_5"
+    local PACKAGE=""
+    
+    # Parse optional arguments
+    shift
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --device=*)
+                DEVICE="${1#*=}"
+                ;;
+            --package=*)
+                PACKAGE="${1#*=}"
+                ;;
+            *)
+                echo "Unknown option: $1"
+                exit 1
+                ;;
+        esac
+        shift
+    done
+    
+    # Jika package tidak diberikan, minta user memilih
+    if [[ -z "$PACKAGE" ]]; then
+        echo "Available system images:"
+        echo "(Note: Install system images first with 'avidia install-sdk <api-level>')"
+        "$SDK_MANAGER" --sdk_root="$ANDROID_HOME" --list 2>/dev/null | grep "system-images;" | head -20
+        
+        echo ""
+        echo -n "Enter system image package (e.g., 'system-images;android-34;google_apis;x86_64'): "
+        read PACKAGE
+        
+        if [[ -z "$PACKAGE" ]]; then
+            echo "Package is required!"
+            exit 1
+        fi
     fi
     
-    echo "Creating AVD: $NAME"
-    echo "System Image: $SYSTEM_IMAGE"
+    echo "Creating AVD: $AVD_NAME"
     echo "Device: $DEVICE"
+    echo "Package: $PACKAGE"
+    echo ""
     
-    "$AVD_MANAGER" create avd -n "$NAME" -k "$SYSTEM_IMAGE" -d "$DEVICE"
+    # Create AVD
+    "$AVD_MANAGER" create avd \
+        -n "$AVD_NAME" \
+        -k "$PACKAGE" \
+        -d "$DEVICE"
 }
 
-# Fungsi baru untuk start AVD dengan performa optimal
-start_avd_performance() {
-    local NAME="$1"
+# Fungsi untuk start AVD dengan performa optimal
+start_avd() {
+    verify_installation
+    setup_environment
     
-    if [[ -z "$NAME" ]]; then
-        echo "Usage: avidia start-perf <name>"
+    if [[ -z "$1" ]]; then
+        echo "Usage: avidia start <avd-name>"
+        echo "Example: avidia start Pixel_5_API_34"
         exit 1
     fi
     
-    if [[ ! -f "$EMULATOR" ]]; then
-        echo "Emulator not found at: $EMULATOR"
+    local AVD_NAME="$1"
+    
+    # Cek apakah AVD ada
+    if ! "$EMULATOR" -list-avds | grep -q "^$AVD_NAME$"; then
+        echo "AVD '$AVD_NAME' not found!"
+        echo "Available AVDs:"
+        list_avds
         exit 1
     fi
     
     # Cek apakah KVM tersedia
-    local KVM_OPTS=""
+    local KVM_OPTIONS=""
     if [[ -c /dev/kvm ]]; then
-        KVM_OPTS="-qemu -enable-kvm"
+        KVM_OPTIONS="-qemu -enable-kvm"
         echo "KVM acceleration enabled"
     else
         echo "KVM not available, using software acceleration"
     fi
     
-    echo "Starting AVD: $NAME with optimal performance..."
-    "$EMULATOR" -avd "$NAME" -gpu host -no-snapshot-load -netdelay none -netspeed full $KVM_OPTS &
+    echo "Starting AVD: $AVD_NAME"
+    echo "Press Ctrl+C to stop the emulator"
+    echo ""
+    
+    # Start emulator dengan opsi performa
+    "$EMULATOR" \
+        -avd "$AVD_NAME" \
+        -gpu host \
+        -no-snapshot-load \
+        -netdelay none \
+        -netspeed full \
+        $KVM_OPTIONS
 }
 
-# Fungsi baru untuk delete AVD
+# Fungsi untuk start AVD di background
+start_avd_background() {
+    verify_installation
+    setup_environment
+    
+    if [[ -z "$1" ]]; then
+        echo "Usage: avidia start-bg <avd-name>"
+        exit 1
+    fi
+    
+    local AVD_NAME="$1"
+    
+    # Cek apakah AVD ada
+    if ! "$EMULATOR" -list-avds | grep -q "^$AVD_NAME$"; then
+        echo "AVD '$AVD_NAME' not found!"
+        exit 1
+    fi
+    
+    # Start di background
+    nohup "$EMULATOR" -avd "$AVD_NAME" -no-snapshot-load > /dev/null 2>&1 &
+    echo "AVD '$AVD_NAME' started in background (PID: $!)"
+}
+
+# Fungsi untuk delete AVD
 delete_avd() {
-    local NAME="$1"
+    verify_installation
+    setup_environment
     
-    if [[ -z "$NAME" ]]; then
-        echo "Usage: avidia delete-avd <name>"
+    if [[ -z "$1" ]]; then
+        echo "Usage: avidia delete <avd-name>"
         exit 1
     fi
     
-    if [[ ! -f "$AVD_MANAGER" ]]; then
-        echo "AVD Manager not found at: $AVD_MANAGER"
-        exit 1
-    fi
+    local AVD_NAME="$1"
     
-    echo "Deleting AVD: $NAME"
-    "$AVD_MANAGER" delete avd -n "$NAME"
+    echo "Deleting AVD: $AVD_NAME"
+    echo "This will remove the virtual device configuration."
+    echo -n "Are you sure? (yes/no): "
+    read CONFIRM
+    
+    if [[ "$CONFIRM" == "yes" ]] || [[ "$CONFIRM" == "y" ]]; then
+        "$AVD_MANAGER" delete avd -n "$AVD_NAME"
+        echo "AVD '$AVD_NAME' deleted."
+    else
+        echo "Deletion cancelled."
+    fi
 }
 
-# Fungsi baru untuk list device definitions
-list_devices() {
-    if [[ ! -f "$AVD_MANAGER" ]]; then
-        echo "AVD Manager not found at: $AVD_MANAGER"
+# Fungsi untuk install SDK/System Image
+install_sdk() {
+    verify_installation
+    setup_environment
+    
+    if [[ -z "$1" ]]; then
+        echo "Usage: avidia install-sdk <api-level> [type] [abi]"
+        echo ""
+        echo "Examples:"
+        echo "  avidia install-sdk 34                  # Install Android 14"
+        echo "  avidia install-sdk 34 google_apis      # With Google APIs"
+        echo "  avidia install-sdk 34 google_apis x86_64 # Specific architecture"
+        echo ""
+        echo "Available types:"
+        echo "  google_apis         - Android with Google APIs"
+        echo "  google_apis_playstore - With Google Play Store"
+        echo "  android             - Pure AOSP"
         exit 1
     fi
     
+    local API_LEVEL="$1"
+    local IMAGE_TYPE="${2:-google_apis}"
+    local ABI="${3:-x86_64}"
+    
+    local PACKAGE="system-images;android-$API_LEVEL;$IMAGE_TYPE;$ABI"
+    
+    echo "Installing: $PACKAGE"
+    echo "This may take a while depending on your internet connection..."
+    echo ""
+    
+    "$SDK_MANAGER" --sdk_root="$ANDROID_HOME" "$PACKAGE"
+    
+    echo ""
+    echo "Package installed successfully!"
+    echo "You can now create an AVD with:"
+    echo "  avidia create <name> --package='$PACKAGE'"
+}
+
+# Fungsi untuk list device definitions
+list_devices() {
+    verify_installation
+    setup_environment
+    
+    echo "Available device definitions:"
+    echo ""
     "$AVD_MANAGER" list device
 }
 
-# Fungsi baru untuk list targets
+# Fungsi untuk list targets
 list_targets() {
-    if [[ ! -f "$AVD_MANAGER" ]]; then
-        echo "AVD Manager not found at: $AVD_MANAGER"
-        exit 1
-    fi
+    verify_installation
+    setup_environment
     
+    echo "Available targets:"
+    echo ""
     "$AVD_MANAGER" list target
 }
 
-# Fungsi baru untuk list system images
-list_system_images() {
-    if [[ ! -f "$SDK_MANAGER" ]]; then
-        echo "SDK Manager not found at: $SDK_MANAGER"
-        exit 1
+# Fungsi untuk list system images
+list_images() {
+    verify_installation
+    setup_environment
+    
+    echo "Available system images:"
+    echo "(Use 'avidia install-sdk <api-level>' to install)"
+    echo ""
+    "$SDK_MANAGER" --sdk_root="$ANDROID_HOME" --list | grep "system-images;" | head -30
+}
+
+# Fungsi untuk stop semua emulator
+stop_emulators() {
+    echo "Stopping all Android emulators..."
+    pkill -f "emulator.*-avd" 2>/dev/null && echo "Emulators stopped" || echo "No emulators running"
+}
+
+# Fungsi untuk system info
+system_info() {
+    verify_installation
+    setup_environment
+    
+    print_header
+    echo "System Information:"
+    echo "==================="
+    echo ""
+    echo "Avidia Version:   0.1.0"
+    echo "Android SDK:      $ANDROID_HOME"
+    echo ""
+    
+    if [[ -f "$CONFIG_FILE" ]]; then
+        echo "Configuration:"
+        cat "$CONFIG_FILE"
+        echo ""
     fi
     
-    "$SDK_MANAGER" --list | grep system-images
+    echo "Java:"
+    java -version 2>&1 | head -3
+    echo ""
+    
+    echo "System:"
+    uname -a
+    echo ""
+    
+    echo "KVM Status:"
+    if [[ -c /dev/kvm ]]; then
+        echo "  Available (Hardware acceleration enabled)"
+    else
+        echo "  Not available (Software acceleration only)"
+        echo "  Run 'avidia suggest-kvm' for installation instructions"
+    fi
+    echo ""
+    
+    echo "Installed Packages:"
+    "$SDK_MANAGER" --sdk_root="$ANDROID_HOME" --list_installed | grep -E "(platform-tools|emulator|system-images)" || echo "  No packages found"
 }
 
 initiate_sdk() {
@@ -309,7 +520,9 @@ initiate_sdk() {
 
     print_header
 
-    echo "Starting system-wide Android environment initialization..."
+    echo "Starting minimal Android environment initialization..."
+    echo "This will install only essential tools (platform-tools and emulator)."
+    echo "System images can be installed later with 'avidia install-sdk'."
     echo ""
 
     # Step 1: Create directory structure
@@ -324,7 +537,7 @@ initiate_sdk() {
     mkdir -p "$USER_CACHE_DIR"
     chown -R $ACTUAL_USER:$(id -gn $ACTUAL_USER) "$ACTUAL_HOME/.local/share/avidia" 2>/dev/null || true
 
-    # Step 2: Setup environment first
+    # Step 2: Setup environment
     echo "Step 2: Setting up environment variables"
     cat > /etc/profile.d/android-sdk.sh << 'EOF'
 # Android SDK Configuration
@@ -353,7 +566,7 @@ EOF
         elif command -v curl &> /dev/null; then
             curl -s --progress-bar -O https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip
         else
-            echo "wget or curl required"
+            echo "Error: wget or curl required"
             exit 1
         fi
 
@@ -373,55 +586,22 @@ EOF
     chmod -R 755 "$ANDROID_HOME/cmdline-tools"
     chown -R root:root "$ANDROID_HOME"
 
-    # Step 6: Select Android SDK Level
-    echo "Step 6: Select Android SDK Level"
-    echo "Available Android versions:"
-    echo "  36 - Android 16"
-    echo "  35 - Android 15"
-    echo "  34 - Android 14"
-    echo "  33 - Android 13"
-    echo "  32 - Android 12L"
-    echo "  31 - Android 12"
-    echo "  30 - Android 11"
-    echo "  29 - Android 10"
-    echo "  Older Android API Level (1-28)"
-    echo ""
-    echo -n "Enter SDK/API level (default: 36): "
-    read SDK_LEVEL
-    SDK_LEVEL="${SDK_LEVEL:-36}"
+    # Setup environment untuk tools
+    setup_environment
 
-    # Step 7: Select system image type (GMS or AOSP)
-    echo ""
-    echo "Step 7: Select System Image Type"
-    echo "Available options:"
-    echo "  1) GMS (Google Play Services) - Includes Google Play Store and services"
-    echo "  2) AOSP (Android Open Source Project) - Pure Android without Google services"
-    echo ""
-    echo -n "Select option (default: 1): "
-    read IMAGE_OPTION
-    IMAGE_OPTION="${IMAGE_OPTION:-1}"
+    # Step 6: Install basic packages
+    echo "Step 6: Installing basic tools (platform-tools and emulator)"
+    install_basic_packages
 
-    if [[ "$IMAGE_OPTION" == "1" ]]; then
-        IMAGE_TYPE="google_apis_playstore"
-        IMAGE_DESC="GMS (Google Play)"
-    else
-        IMAGE_TYPE="google_apis"
-        IMAGE_DESC="AOSP"
-    fi
+    # Step 7: Accept licenses
+    echo "Step 7: Accepting licenses"
+    yes | "$SDK_MANAGER" --sdk_root="$ANDROID_HOME" --licenses
 
-    echo "Selected: $IMAGE_DESC"
-
-    # Install required packages (platform-tools dan emulator saja)
-    install_required_packages "$SDK_LEVEL" "$IMAGE_TYPE"
-
-    echo "Step 10: Creating configuration file"
+    echo "Step 8: Creating configuration file"
     cat > "$CONFIG_FILE" << EOF
 # Avidia Configuration
 SDK_INSTALLED=true
 SDK_PATH="$ANDROID_HOME"
-SDK_LEVEL="$SDK_LEVEL"
-IMAGE_TYPE="$IMAGE_TYPE"
-IMAGE_DESC="$IMAGE_DESC"
 INIT_DATE="$(date)"
 EOF
 
@@ -432,35 +612,32 @@ EOF
     echo "================================================"
     echo ""
     echo "Android environment has been initialized at: $ANDROID_HOME"
-    echo "Android SDK Level: $SDK_LEVEL"
-    echo "System images can be installed via:"
-    echo "  avidia install-sdk <api-level>"
-    echo "  or through the TUI menu"
+    echo ""
+    echo "Next steps:"
+    echo "  1. Install system images:  avidia install-sdk <api-level>"
+    echo "  2. Create a virtual device: avidia create <name>"
+    echo "  3. Start the device:       avidia start <name>"
+    echo ""
+    echo "Quick commands:"
+    echo "  avidia list                - List virtual devices"
+    echo "  avidia create <name>       - Create new device"
+    echo "  avidia start <name>        - Start device"
+    echo "  avidia install-sdk 34      - Install Android 14"
+    echo "  avidia system-info         - Show system information"
     echo ""
     echo "Environment variables have been configured in /etc/profile.d/android-sdk.sh"
+    echo "You may need to log out and log back in for environment changes to take effect."
     echo ""
 
     # Show KVM installation recommendation
     suggest_kvm_installation
 
     echo ""
-    echo "Note: Run 'avidia suggest-kvm' anytime to see KVM installation instructions."
-    echo ""
-    echo "Basic commands available:"
-    echo "  avidia list-avds              - List all AVDs"
-    echo "  avidia list-devices           - List device definitions"
-    echo "  avidia list-targets           - List available targets"
-    echo "  avidia list-images            - List system images"
-    echo "  avidia create-avd <args>      - Create new AVD"
-    echo "  avidia start-perf <name>      - Start AVD with optimal performance"
-    echo "  avidia delete-avd <name>      - Delete AVD"
-    echo ""
-
-    echo "Starting interactive mode in 10 seconds..."
+    echo "Launching interactive mode in 5 seconds..."
     echo "Press Ctrl+C to cancel"
 
-    for i in {10..1}; do
-        echo -ne "\rCountdown: $i seconds remaining... "
+    for i in {5..1}; do
+        echo -ne "\rStarting in $i seconds... "
         sleep 1
     done
     echo ""
@@ -522,6 +699,7 @@ clean_sdk() {
     echo "================================================"
 }
 
+# Fungsi utama untuk menjalankan core Java
 run_core() {
     verify_installation
     setup_environment
@@ -534,79 +712,43 @@ run_core() {
     "$JAVA_CMD" -cp "$AVIDIA_JAR:$LANTERNA_JAR" org.jimedrand.avidia.avidia "$@"
 }
 
-quick_operations() {
-    verify_installation
-    setup_environment
-
-    case "$1" in
-        list)
-            "$EMULATOR" -list-avds
-            ;;
-        start)
-            if [[ -z "$2" ]]; then
-                echo "Usage: avidia quick-start <avd-name>"
-                exit 1
-            fi
-            start_avd_performance "$2"
-            echo "AVD started in background"
-            ;;
-        stop)
-            pkill -f "emulator.*-avd" 2>/dev/null && echo "Emulators stopped" || echo "No emulators running"
-            ;;
-        info)
-            echo "Android SDK: $ANDROID_HOME"
-            if [[ -f "$CONFIG_FILE" ]]; then
-                source "$CONFIG_FILE" 2>/dev/null
-                echo "SDK Level: ${SDK_LEVEL:-Not specified}"
-                echo "Image Type: ${IMAGE_DESC:-Not specified}"
-            fi
-            echo "Java: $(java -version 2>&1 | head -n 1)"
-            echo "System: $(uname -s) $(uname -m)"
-            ;;
-    esac
-}
-
 show_help() {
     print_header
     echo ""
     echo "Usage: avidia [command] [options]"
     echo ""
     echo "Core Commands:"
-    echo "  (no command)        Interactive mode"
-    echo "  list-avds           List virtual devices"
-    echo "  create-avd          Create virtual device"
-    echo "  start-perf          Start virtual device with optimal performance"
-    echo "  delete-avd          Remove virtual device"
-    echo "  install-sdk         Install additional SDK"
+    echo "  (no command)        Interactive mode (TUI)"
+    echo "  list                List virtual devices"
+    echo "  create <name>       Create virtual device"
+    echo "  start <name>        Start virtual device"
+    echo "  start-bg <name>     Start device in background"
+    echo "  delete <name>       Remove virtual device"
+    echo "  stop                Stop all running emulators"
+    echo "  install-sdk <api>   Install system image"
     echo ""
-    echo "System Commands:"
-    echo "  initiate            Initialize Android environment system-wide"
-    echo "  clean               Remove Android environment (requires confirmation)"
-    echo "  suggest-kvm         Show KVM installation recommendations"
-    echo ""
-    echo "List Commands:"
-    echo "  list-devices        List available device definitions"
+    echo "Information Commands:"
+    echo "  system-info         Show system information"
+    echo "  list-devices        List device definitions"
     echo "  list-targets        List available targets"
     echo "  list-images         List available system images"
     echo ""
-    echo "Quick Commands:"
-    echo "  quick-list          Fast device listing"
-    echo "  quick-start <name>  Start device in background"
-    echo "  quick-stop          Stop all devices"
-    echo "  quick-info          System information"
+    echo "System Commands:"
+    echo "  initiate            Initialize Android environment (requires sudo)"
+    echo "  repair              Repair/update installation (requires sudo)"
+    echo "  clean               Remove Android environment (requires sudo)"
+    echo "  suggest-kvm         Show KVM installation instructions"
     echo ""
     echo "Examples:"
-    echo "  sudo avidia initiate"
-    echo "  avidia"
-    echo "  avidia list-avds"
-    echo "  avidia create-avd Pixel_5_API_34 \"system-images;android-34;google_apis;x86_64\" pixel_5"
-    echo "  avidia start-perf Pixel_5_API_34"
-    echo "  avidia suggest-kvm"
+    echo "  sudo avidia initiate                # First-time setup"
+    echo "  avidia install-sdk 34               # Install Android 14"
+    echo "  avidia create Pixel_5_API_34        # Create virtual device"
+    echo "  avidia start Pixel_5_API_34         # Start device"
+    echo "  avidia list                         # List devices"
     echo ""
     echo "Requirements:"
-    echo "  - OpenJDK 17 or newer (JDK, not JRE)"
-    echo "  - QEMU/KVM with libvirt (recommended for performance)"
-    echo "  - 8GB+ RAM for AVD usages"
+    echo "  - OpenJDK 17 or newer"
+    echo "  - 8GB+ RAM recommended for AVDs"
     echo ""
     echo "Note: Run 'sudo avidia initiate' first to initialize Android environment"
     echo "================================================"
@@ -617,35 +759,35 @@ main() {
         initiate)
             initiate_sdk
             ;;
+        repair)
+            repair_installation
+            ;;
         clean)
             clean_sdk
             ;;
         suggest-kvm)
             suggest_kvm_installation
             ;;
-        quick-list)
-            quick_operations "list"
-            ;;
-        quick-start)
-            quick_operations "start" "$2"
-            ;;
-        quick-stop)
-            quick_operations "stop"
-            ;;
-        quick-info)
-            quick_operations "info"
-            ;;
-        list-avds)
+        list)
             list_avds
             ;;
-        create-avd)
-            create_avd "$2" "$3" "$4"
+        create)
+            create_avd "${@:2}"
             ;;
-        start-perf)
-            start_avd_performance "$2"
+        start)
+            start_avd "$2"
             ;;
-        delete-avd)
+        start-bg)
+            start_avd_background "$2"
+            ;;
+        stop)
+            stop_emulators
+            ;;
+        delete)
             delete_avd "$2"
+            ;;
+        install-sdk)
+            install_sdk "$2" "$3" "$4"
             ;;
         list-devices)
             list_devices
@@ -654,20 +796,10 @@ main() {
             list_targets
             ;;
         list-images)
-            list_system_images
+            list_images
             ;;
-        install-sdk)
-            if [[ -z "$2" ]]; then
-                echo "Usage: avidia install-sdk <api-level> [abi] [type]"
-                echo "Example: avidia install-sdk 34 x86_64 google_apis"
-                exit 1
-            fi
-            API="$2"
-            ABI="${3:-x86_64}"
-            TYPE="${4:-google_apis}"
-            PKG="system-images;android-${API};${TYPE};${ABI}"
-            echo "Installing: $PKG"
-            "$SDK_MANAGER" --sdk_root="$ANDROID_HOME" "$PKG"
+        system-info)
+            system_info
             ;;
         help|--help|-h)
             show_help
