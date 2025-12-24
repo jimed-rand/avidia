@@ -9,7 +9,7 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-AVIDIA_JAR="/usr/bin/avidia.jar"
+AVIDIA_JAR="/usr/bin/avidia. jar"
 JAVA_CMD="/usr/bin/java"
 ANDROID_HOME="/usr/share/android"
 CONFIG_FILE="/etc/avidia.conf"
@@ -106,96 +106,71 @@ check_jdk() {
     fi
 }
 
-check_virtualization_support() {
-    if [[ "$(uname -s)" = "Linux" ]]; then
-        echo -e "${CYAN}Checking virtualization support...${NC}"
+suggest_kvm_installation() {
+    echo -e "${YELLOW}========================================${NC}"
+    echo -e "${YELLOW}RECOMMENDATION: Install KVM for Better Performance${NC}"
+    echo -e "${YELLOW}========================================${NC}"
+    echo ""
+    echo "For optimal Android Emulator performance, QEMU/KVM is strongly recommended."
+    echo ""
+    echo -e "${CYAN}Install QEMU/KVM for your distribution:${NC}"
+    echo ""
 
-        if ! grep -q -E '(vmx|svm)' /proc/cpuinfo; then
-            echo -e "${YELLOW}Warning: CPU virtualization extensions not detected.${NC}"
-            echo "Virtualization may be disabled in BIOS/UEFI settings."
-            echo "Check your BIOS/UEFI and enable Intel VT-x or AMD-V."
-            return 1
-        fi
+    local pm=$(detect_package_manager)
+    case $pm in
+        pacman)
+            # Arch Linux, Manjaro
+            echo -e "  ${BOLD}Arch Linux / Manjaro: ${NC}"
+            echo -e "  ${CYAN}sudo pacman -S qemu-full libvirt${NC}"
+            echo -e "  ${CYAN}sudo systemctl enable --now libvirtd${NC}"
+            echo "  Documentation: https://wiki.archlinux.org/title/KVM"
+            ;;
+        apt)
+            # Debian, Ubuntu
+            echo -e "  ${BOLD}Debian / Ubuntu:${NC}"
+            echo -e "  ${CYAN}sudo apt install qemu-kvm libvirt-daemon-system${NC}"
+            echo -e "  ${CYAN}sudo systemctl enable --now libvirtd${NC}"
+            echo "  Documentation: https://wiki.debian.org/KVM"
+            ;;
+        dnf)
+            # Fedora
+            echo -e "  ${BOLD}Fedora:${NC}"
+            echo -e "  ${CYAN}sudo dnf install @virtualization${NC}"
+            echo -e "  ${CYAN}sudo systemctl enable --now libvirtd${NC}"
+            echo "  Documentation: https://docs.fedoraproject.org/en-US/quick-docs/using-kvm/"
+            ;;
+        zypper)
+            # openSUSE, SLE
+            echo -e "  ${BOLD}openSUSE / SLE:${NC}"
+            echo -e "  ${CYAN}sudo zypper install patterns-server-kvm_server${NC}"
+            echo -e "  ${CYAN}sudo systemctl enable --now libvirtd${NC}"
+            echo "  Documentation: https://doc.opensuse.org/documentation/leap/virtualization/html/book-virt/cha-vt-installation.html"
+            ;;
+        apk)
+            # Alpine Linux
+            echo -e "  ${BOLD}Alpine Linux:${NC}"
+            echo -e "  ${CYAN}sudo apk add qemu-system-x86_64 libvirt${NC}"
+            echo -e "  ${CYAN}sudo rc-update add libvirtd${NC}"
+            echo "  Documentation: https://wiki.alpinelinux.org/wiki/Qemu"
+            ;;
+        *)
+            # Other distributions
+            echo -e "  ${BOLD}Other Distributions:${NC}"
+            echo "Please refer to the relevant documentation for your distribution to ensure correct implementation."
+            ;;
+    esac
 
-        if [[ ! -e /dev/kvm ]]; then
-            echo -e "${YELLOW}Warning: KVM (/dev/kvm) not available.${NC}"
-            echo "Android Emulator will be much slower without KVM acceleration."
-            echo ""
-            echo "For optimal performance, install QEMU/KVM for your distribution:"
-            echo ""
-
-            local pm=$(detect_package_manager)
-            case $pm in
-                pacman)
-                    # Arch Linux, Manjaro
-                    echo -e "  ${CYAN}sudo pacman -S qemu-full libvirt${NC}"
-                    echo -e "  ${CYAN}sudo systemctl enable --now libvirtd${NC}"
-                    echo -e "  ${CYAN}sudo usermod -aG kvm \$USER${NC}"
-                    echo "  Documentation: https://wiki.archlinux.org/title/KVM"
-                    ;;
-                apt)
-                    # Debian, Ubuntu
-                    echo -e "  ${CYAN}sudo apt install qemu-kvm libvirt-daemon-system${NC}"
-                    echo -e "  ${CYAN}sudo systemctl enable --now libvirtd${NC}"
-                    echo -e "  ${CYAN}sudo usermod -aG kvm \$USER${NC}"
-                    echo "  Documentation: https://wiki.debian.org/KVM"
-                    ;;
-                dnf)
-                    # Fedora
-                    echo -e "  ${CYAN}sudo dnf install @virtualization${NC}"
-                    echo -e "  ${CYAN}sudo systemctl enable --now libvirtd${NC}"
-                    echo -e "  ${CYAN}sudo usermod -aG kvm \$USER${NC}"
-                    echo "  Documentation: https://docs.fedoraproject.org/en-US/quick-docs/using-kvm/"
-                    ;;
-                zypper)
-                    # openSUSE, SLE
-                    echo -e "  ${CYAN}sudo zypper install patterns-server-kvm_server${NC}"
-                    echo -e "  ${CYAN}sudo systemctl enable --now libvirtd${NC}"
-                    echo -e "  ${CYAN}sudo usermod -aG kvm \$USER${NC}"
-                    echo "  Documentation: https://doc.opensuse.org/documentation/leap/virtualization/html/book-virt/cha-vt-installation.html"
-                    ;;
-                apk)
-                    # Alpine Linux
-                    echo -e "  ${CYAN}sudo apk add qemu-system-x86_64 libvirt${NC}"
-                    echo -e "  ${CYAN}sudo rc-update add libvirtd${NC}"
-                    echo -e "  ${CYAN}sudo addgroup \$USER kvm${NC}"
-                    echo "  Documentation: https://wiki.alpinelinux.org/wiki/Qemu"
-                    ;;
-                *)
-                    # Other distributions or init systems
-                    echo "  For other distributions or non-systemd init systems:"
-                    echo "  - Artix (runit): Install qemu-full and libvirt, then enable service"
-                    echo "  - Gentoo (OpenRC): Install app-emulation/qemu and app-emulation/libvirt"
-                    echo "  - Void Linux: Install qemu and libvirt packages"
-                    echo "  Consult your distribution's documentation for KVM setup."
-                    ;;
-            esac
-
-            echo ""
-            echo "After installation, log out and log back in for group changes to take effect."
-            return 1
-        fi
-
-        if ! groups | grep -q kvm; then
-            echo -e "${YELLOW}Warning: User not in kvm group.${NC}"
-            echo "Add user to kvm group:"
-            echo -e "  ${CYAN}sudo usermod -aG kvm \$USER${NC}"
-            echo "Then log out and log back in."
-            return 1
-        fi
-
-        echo -e "${GREEN}Virtualization support detected: KVM acceleration available.${NC}"
-        return 0
-    else
-        echo -e "${YELLOW}Virtualization check only available on Linux.${NC}"
-        return 0
-    fi
+    echo ""
+    echo -e "${YELLOW}After installation: ${NC}"
+    echo "  1. Verify libvirtd service is running:  ${CYAN}systemctl status libvirtd${NC}"
+    echo "  2. Check /dev/kvm exists: ${CYAN}ls -l /dev/kvm${NC}"
+    echo ""
+    echo -e "${YELLOW}========================================${NC}"
 }
 
 initiate_sdk() {
     check_root "initiate"
     check_jdk
-    check_virtualization_support
 
     print_header
 
@@ -213,7 +188,7 @@ initiate_sdk() {
     if command -v wget &> /dev/null; then
         wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
     elif command -v curl &> /dev/null; then
-        curl -s -O https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+        curl -s -O https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest. zip
     else
         echo -e "${RED}wget or curl required${NC}"
         exit 1
@@ -259,7 +234,7 @@ initiate_sdk() {
 
     echo -e "${YELLOW}Step 8: Creating system configuration${NC}"
 
-    cat > /etc/profile.d/android-sdk.sh << EOF
+    cat > /etc/profile.d/android-sdk. sh << EOF
 # Android SDK Configuration
 export ANDROID_HOME="$ANDROID_HOME"
 export PATH="\$PATH:\$ANDROID_HOME/cmdline-tools/latest/bin"
@@ -289,8 +264,11 @@ EOF
     echo "  - List virtual devices: ${CYAN}avidia list${NC}"
     echo "  - Create a device: ${CYAN}avidia create <name>${NC}"
     echo ""
-    echo -e "${YELLOW}Note:${NC} For optimal performance, ensure KVM acceleration is enabled."
-    echo "Run ${CYAN}avidia check-virt${NC} to verify virtualization support."
+
+    # Show KVM installation recommendation
+    suggest_kvm_installation
+
+    echo -e "${YELLOW}Note: ${NC} Run ${CYAN}avidia suggest-kvm${NC} anytime to see KVM installation instructions."
     echo -e "================================================${NC}"
 
     rm -rf "$TEMP_DIR"
@@ -337,7 +315,7 @@ clean_sdk() {
     echo "================================================"
     echo ""
     echo "Android SDK has been removed from the system."
-    echo "To reinstall, run: ${CYAN}sudo avidia initiate${NC}"
+    echo "To reinstall, run:  ${CYAN}sudo avidia initiate${NC}"
     echo -e "================================================${NC}"
 }
 
@@ -345,7 +323,7 @@ run_core() {
     verify_installation
     setup_environment
 
-    if [[ ! -f "$JAVA_CMD" ]]; then
+    if [[ !  -f "$JAVA_CMD" ]]; then
         echo -e "${RED}Java runtime not found${NC}"
         exit 1
     fi
@@ -363,7 +341,7 @@ quick_operations() {
             ;;
         start)
             if [[ -z "$2" ]]; then
-                echo "Usage: avidia quick-start <avd-name>"
+                echo "Usage:  avidia quick-start <avd-name>"
                 exit 1
             fi
             nohup "$ANDROID_HOME/emulator/emulator" -avd "$2" -no-snapshot-load > /dev/null 2>&1 &
@@ -378,7 +356,7 @@ quick_operations() {
                 source "$CONFIG_FILE" 2>/dev/null
                 echo "SDK Level: ${SDK_LEVEL:-Not specified}"
             fi
-            echo "Java: $(java -version 2>&1 | head -n 1)"
+            echo "Java:  $(java -version 2>&1 | head -n 1)"
             echo "System: $(uname -s) $(uname -m)"
             ;;
     esac
@@ -400,7 +378,7 @@ show_help() {
     echo -e "${YELLOW}System Commands:${NC}"
     echo "  initiate            Install Android SDK system-wide"
     echo "  clean               Remove SDK (requires confirmation)"
-    echo "  check-virt          Check virtualization support"
+    echo "  suggest-kvm         Show KVM installation recommendations"
     echo ""
     echo -e "${YELLOW}Quick Commands:${NC}"
     echo "  quick-list          Fast device listing"
@@ -413,10 +391,11 @@ show_help() {
     echo "  ${CYAN}avidia${NC}"
     echo "  ${CYAN}avidia create mydevice${NC}"
     echo "  ${CYAN}avidia quick-start mydevice${NC}"
+    echo "  ${CYAN}avidia suggest-kvm${NC}"
     echo ""
     echo -e "${YELLOW}Requirements:${NC}"
     echo "  - OpenJDK 17 or newer (JDK, not JRE)"
-    echo "  - QEMU/KVM (recommended for performance)"
+    echo "  - QEMU/KVM with libvirtd (recommended for performance)"
     echo "  - 4GB+ RAM for Android emulator"
     echo ""
     echo -e "${YELLOW}Note:${NC} Run 'sudo avidia initiate' first to install Android SDK"
@@ -431,8 +410,8 @@ main() {
         clean)
             clean_sdk
             ;;
-        check-virt)
-            check_virtualization_support
+        suggest-kvm)
+            suggest_kvm_installation
             ;;
         quick-list)
             quick_operations "list"
@@ -451,7 +430,7 @@ main() {
             ;;
         create)
             if [[ -z "$2" ]]; then
-                echo "Usage: avidia create <name> [--api <level>] [--abi <type>]"
+                echo "Usage:  avidia create <name> [--api <level>] [--abi <type>]"
                 exit 1
             fi
 
