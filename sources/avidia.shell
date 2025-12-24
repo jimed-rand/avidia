@@ -50,19 +50,19 @@ detect_package_manager() {
 
 verify_installation() {
     if [[ ! -f "$AVIDIA_JAR" ]]; then
-        echo -e "${RED}Avidia core not installed.${NC}"
+        echo -e "${RED}Avidia not installed.${NC}"
         echo "Avidia JAR should be at: $AVIDIA_JAR"
         exit 1
     fi
 
     if [[ ! -d "$ANDROID_HOME" ]]; then
-        echo -e "${RED}Android SDK not initialized.${NC}"
+        echo -e "${RED}Android SDK and CLI Tools not initialized.${NC}"
         echo "Run: ${CYAN}sudo avidia initiate${NC}"
         exit 1
     fi
 
     if [[ ! -f "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]]; then
-        echo -e "${RED}Android SDK tools not found.${NC}"
+        echo -e "${RED}Android SDK tools and CLI Tools not found.${NC}"
         echo "Run: ${CYAN}sudo avidia initiate${NC}"
         exit 1
     fi
@@ -174,7 +174,7 @@ initiate_sdk() {
 
     print_header
 
-    echo -e "${CYAN}Starting system-wide Android SDK installation...${NC}"
+    echo -e "${CYAN}Starting system-wide Android SDK and CLI Tools installation...${NC}"
     echo ""
 
     echo -e "${YELLOW}Step 1: Creating directory structure${NC}"
@@ -205,7 +205,7 @@ initiate_sdk() {
     chown -R root:root "$ANDROID_HOME"
 
     echo -e "${YELLOW}Step 5: Select Android SDK Level${NC}"
-    echo "Available Android versions for development:"
+    echo "Available Android versions:"
     echo "  36 - Android 16"
     echo "  35 - Android 15"
     echo "  34 - Android 14"
@@ -216,7 +216,7 @@ initiate_sdk() {
     echo "  29 - Android 10"
     echo "  Older Android API Level (1-28)"
     echo ""
-    echo -n "Enter SDK level (default: 36): "
+    echo -n "Enter SDK/API level (default: 36): "
     read SDK_LEVEL
     SDK_LEVEL="${SDK_LEVEL:-36}"
 
@@ -278,10 +278,10 @@ clean_sdk() {
     check_root "clean"
 
     echo -e "${RED}================================================"
-    echo "WARNING: SDK REMOVAL"
+    echo "WARNING: SDK AND CLI TOOLS REMOVAL"
     echo "================================================"
     echo ""
-    echo "This will remove the Android SDK from:"
+    echo "This will remove the Android SDK and CLI Tools from:"
     echo "  $ANDROID_HOME"
     echo ""
     echo "Virtual device configurations (~/.android/avd/) will NOT be removed."
@@ -395,10 +395,10 @@ show_help() {
     echo ""
     echo -e "${YELLOW}Requirements:${NC}"
     echo "  - OpenJDK 17 or newer (JDK, not JRE)"
-    echo "  - QEMU/KVM with libvirtd (recommended for performance)"
-    echo "  - 4GB+ RAM for Android emulator"
+    echo "  - QEMU/KVM with libvirt (recommended for performance)"
+    echo "  - 8GB+ RAM for AVD usages"
     echo ""
-    echo -e "${YELLOW}Note:${NC} Run 'sudo avidia initiate' first to install Android SDK"
+    echo -e "${YELLOW}Note:${NC} Run 'sudo avidia initiate' first to initate Android environment"
     echo -e "================================================${NC}"
 }
 
