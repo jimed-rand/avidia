@@ -274,7 +274,7 @@ EOF
     echo "Step 8: Installing essential packages"
     echo "This may take several minutes..."
 
-    "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" \
+    "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" --verbose \
         "platform-tools" \
         "platforms;android-$SDK_LEVEL" \
         "system-images;android-$SDK_LEVEL;$IMAGE_TYPE;x86_64" \
