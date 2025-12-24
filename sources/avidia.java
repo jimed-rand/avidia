@@ -4,7 +4,7 @@ import java.io.*;
 import java.nio.file.*;
 import java.util.*;
 
-public class Avidia {
+public class avidia {
 
     private static final String RESET = "\033[0m";
     private static final String RED = "\033[0;31m";
