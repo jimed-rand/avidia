@@ -186,9 +186,9 @@ initiate_sdk() {
     cd "$TEMP_DIR"
 
     if command -v wget &> /dev/null; then
-        wget --show-progress https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+        wget --show-progress -c https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip
     elif command -v curl &> /dev/null; then
-        curl --progress-bar -O https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+        curl --progress-bar -O https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip
     else
         echo -e "${RED}wget or curl required${NC}"
         exit 1
