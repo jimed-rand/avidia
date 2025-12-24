@@ -9,7 +9,7 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-AVIDIA_JAR="/usr/bin/avidia. jar"
+AVIDIA_JAR="/usr/bin/avidia.jar"
 JAVA_CMD="/usr/bin/java"
 ANDROID_HOME="/usr/share/android"
 CONFIG_FILE="/etc/avidia.conf"
@@ -107,65 +107,65 @@ check_jdk() {
 }
 
 suggest_kvm_installation() {
-    echo -e "${YELLOW}========================================${NC}"
-    echo -e "${YELLOW}RECOMMENDATION: Install KVM for Better Performance${NC}"
-    echo -e "${YELLOW}========================================${NC}"
+    echo "========================================"
+    echo "RECOMMENDATION: Install KVM for Better Performance"
+    echo "========================================"
     echo ""
     echo "For optimal Android Emulator performance, QEMU/KVM is strongly recommended."
     echo ""
-    echo -e "${CYAN}Install QEMU/KVM for your distribution:${NC}"
+    echo "Install QEMU/KVM for your distribution:"
     echo ""
 
     local pm=$(detect_package_manager)
     case $pm in
         pacman)
             # Arch Linux, Manjaro
-            echo -e "  ${BOLD}Arch Linux / Manjaro: ${NC}"
-            echo -e "  ${CYAN}sudo pacman -S qemu-full libvirt${NC}"
-            echo -e "  ${CYAN}sudo systemctl enable --now libvirtd${NC}"
+            echo "  Arch Linux / Manjaro:"
+            echo "    sudo pacman -S qemu-full libvirt"
+            echo "    sudo systemctl enable --now libvirtd"
             echo "  Documentation: https://wiki.archlinux.org/title/KVM"
             ;;
         apt)
             # Debian, Ubuntu
-            echo -e "  ${BOLD}Debian / Ubuntu:${NC}"
-            echo -e "  ${CYAN}sudo apt install qemu-kvm libvirt-daemon-system${NC}"
-            echo -e "  ${CYAN}sudo systemctl enable --now libvirtd${NC}"
+            echo "  Debian / Ubuntu:"
+            echo "    sudo apt install qemu-kvm libvirt-daemon-system"
+            echo "    sudo systemctl enable --now libvirtd"
             echo "  Documentation: https://wiki.debian.org/KVM"
             ;;
         dnf)
             # Fedora
-            echo -e "  ${BOLD}Fedora:${NC}"
-            echo -e "  ${CYAN}sudo dnf install @virtualization${NC}"
-            echo -e "  ${CYAN}sudo systemctl enable --now libvirtd${NC}"
+            echo "  Fedora:"
+            echo "    sudo dnf install @virtualization"
+            echo "    sudo systemctl enable --now libvirtd"
             echo "  Documentation: https://docs.fedoraproject.org/en-US/quick-docs/using-kvm/"
             ;;
         zypper)
             # openSUSE, SLE
-            echo -e "  ${BOLD}openSUSE / SLE:${NC}"
-            echo -e "  ${CYAN}sudo zypper install patterns-server-kvm_server${NC}"
-            echo -e "  ${CYAN}sudo systemctl enable --now libvirtd${NC}"
+            echo "  openSUSE / SLE:"
+            echo "    sudo zypper install patterns-server-kvm_server"
+            echo "    sudo systemctl enable --now libvirtd"
             echo "  Documentation: https://doc.opensuse.org/documentation/leap/virtualization/html/book-virt/cha-vt-installation.html"
             ;;
         apk)
             # Alpine Linux
-            echo -e "  ${BOLD}Alpine Linux:${NC}"
-            echo -e "  ${CYAN}sudo apk add qemu-system-x86_64 libvirt${NC}"
-            echo -e "  ${CYAN}sudo rc-update add libvirtd${NC}"
+            echo "  Alpine Linux:"
+            echo "    sudo apk add qemu-system-x86_64 libvirt"
+            echo "    sudo rc-update add libvirtd"
             echo "  Documentation: https://wiki.alpinelinux.org/wiki/Qemu"
             ;;
         *)
             # Other distributions
-            echo -e "  ${BOLD}Other Distributions:${NC}"
-            echo "Please refer to the relevant documentation for your distribution to ensure correct implementation."
+            echo "  Other Distributions:"
+            echo "  Please refer to the relevant documentation for your distribution to ensure correct implementation."
             ;;
     esac
 
     echo ""
-    echo -e "${YELLOW}After installation: ${NC}"
-    echo "  1. Verify libvirtd service is running:  ${CYAN}systemctl status libvirtd${NC}"
-    echo "  2. Check /dev/kvm exists: ${CYAN}ls -l /dev/kvm${NC}"
+    echo "After installation:"
+    echo "  1. Verify libvirtd service is running: systemctl status libvirtd"
+    echo "  2. Check /dev/kvm exists: ls -l /dev/kvm"
     echo ""
-    echo -e "${YELLOW}========================================${NC}"
+    echo "========================================"
 }
 
 initiate_sdk() {
@@ -186,9 +186,9 @@ initiate_sdk() {
     cd "$TEMP_DIR"
 
     if command -v wget &> /dev/null; then
-        wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+        wget --show-progress https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
     elif command -v curl &> /dev/null; then
-        curl -s -O https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest. zip
+        curl --progress-bar -O https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
     else
         echo -e "${RED}wget or curl required${NC}"
         exit 1
@@ -223,7 +223,7 @@ initiate_sdk() {
     echo -e "${YELLOW}Step 6: Installing essential packages${NC}"
     echo "This may take several minutes..."
 
-    "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" \
+    "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" --verbose \
         "platform-tools" \
         "platforms;android-$SDK_LEVEL" \
         "system-images;android-$SDK_LEVEL;google_apis;x86_64" \
@@ -234,12 +234,12 @@ initiate_sdk() {
 
     echo -e "${YELLOW}Step 8: Creating system configuration${NC}"
 
-    cat > /etc/profile.d/android-sdk. sh << EOF
+    cat > /etc/profile.d/android-sdk.sh << 'EOF'
 # Android SDK Configuration
-export ANDROID_HOME="$ANDROID_HOME"
-export PATH="\$PATH:\$ANDROID_HOME/cmdline-tools/latest/bin"
-export PATH="\$PATH:\$ANDROID_HOME/platform-tools"
-export PATH="\$PATH:\$ANDROID_HOME/emulator"
+export ANDROID_HOME="/usr/share/android"
+export PATH="$PATH:$ANDROID_HOME/cmdline-tools/latest/bin"
+export PATH="$PATH:$ANDROID_HOME/platform-tools"
+export PATH="$PATH:$ANDROID_HOME/emulator"
 EOF
 
     cat > "$CONFIG_FILE" << EOF
@@ -315,7 +315,7 @@ clean_sdk() {
     echo "================================================"
     echo ""
     echo "Android SDK has been removed from the system."
-    echo "To reinstall, run:  ${CYAN}sudo avidia initiate${NC}"
+    echo "To reinstall, run: sudo avidia initiate"
     echo -e "================================================${NC}"
 }
 
@@ -323,7 +323,7 @@ run_core() {
     verify_installation
     setup_environment
 
-    if [[ !  -f "$JAVA_CMD" ]]; then
+    if [[ ! -f "$JAVA_CMD" ]]; then
         echo -e "${RED}Java runtime not found${NC}"
         exit 1
     fi
@@ -494,7 +494,7 @@ main() {
             ;;
         *)
             echo -e "${RED}Unknown command: $1${NC}"
-            echo "Run '${CYAN}avidia help${NC}' for usage."
+            echo "Run 'avidia help' for usage."
             exit 1
             ;;
     esac
