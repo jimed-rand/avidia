@@ -27,7 +27,6 @@ print_header() {
     echo -e "${CYAN}${BOLD}"
     echo "================================================"
     echo "              AVIDIA INSTALLER                  "
-    echo "              Version $AVIDIA_VERSION                "
     echo "================================================"
     echo -e "${NC}"
 }
