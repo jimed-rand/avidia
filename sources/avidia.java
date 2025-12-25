@@ -34,7 +34,7 @@ public class avidia {
     private static final String MAGENTA = "\033[0;35m";
     private static final String BOLD = "\033[1m";
     private static final String UNDERLINE = "\033[4m";
-
+    
     private static String sdkPath;
     private static String userName;
     private static String homeDir;
@@ -60,6 +60,34 @@ public class avidia {
     
     // Device Definitions - dynamically populated
     private static final List<String[]> DEVICE_DEFINITIONS = new ArrayList<>();
+
+    // New method to create AVD with just a name using defaults
+    private static void createAVDFromName(String avdName) {
+        // Use defaults
+        String apiLevel = "34";
+        String imageType = "google_apis_playstore";
+        String abi = "x86_64";
+        String deviceId = "pixel_5";
+
+        String packageName = String.format("system-images;android-%s;%s;%s", apiLevel, imageType, abi);
+
+        // Check and install system image if needed
+        if (!isSystemImageInstalled(packageName)) {
+            System.out.println(YELLOW + "Required system image not installed. Installing now..." + RESET);
+            if (!installSDKPackage(packageName)) {
+                System.err.println(RED + "Failed to install system image. Aborting." + RESET);
+                return;
+            }
+        }
+
+        System.out.println(CYAN + "Creating AVD: " + avdName + RESET);
+        boolean success = createAVD(avdName, packageName, deviceId);
+        if (success) {
+            System.out.println(GREEN + "AVD '" + avdName + "' created successfully!" + RESET);
+        } else {
+            System.err.println(RED + "Failed to create AVD '" + avdName + "'" + RESET);
+        }
+    }
 
     public static void main(String[] args) {
         if (args.length < 1) {
@@ -95,7 +123,8 @@ public class avidia {
                         System.err.println("Usage: create <name>");
                         System.exit(1);
                     }
-                    createAVDTUI(args[1]);
+                    // Fixed: Call the new method that takes a String parameter
+                    createAVDFromName(args[1]);
                     break;
                 case "start":
                     if (args.length < 2) {
@@ -122,7 +151,7 @@ public class avidia {
             cleanupTerminal();
         }
     }
-    
+
     private static void loadAndroidVersions() {
         // Clear existing versions
         ANDROID_VERSIONS.clear();
@@ -151,10 +180,8 @@ public class avidia {
                     if (parts.length > 1) {
                         String apiPart = parts[1].split(";")[0];
                         String apiLevel = apiPart.trim();
-                        
                         // Create a friendly name - we won't map specific versions
                         String versionName = "Android API " + apiLevel;
-                        
                         // Add to map if not already exists
                         if (!ANDROID_VERSIONS.containsValue(apiLevel)) {
                             ANDROID_VERSIONS.put(versionName, apiLevel);
@@ -162,7 +189,6 @@ public class avidia {
                     }
                 }
             }
-            
             process.waitFor();
             
             // If no versions were found, add some defaults
@@ -182,7 +208,7 @@ public class avidia {
             ANDROID_VERSIONS.put("Android API 30", "30");
         }
     }
-    
+
     private static void loadDeviceDefinitions() {
         DEVICE_DEFINITIONS.clear();
         
@@ -207,7 +233,6 @@ public class avidia {
             
             while ((line = reader.readLine()) != null) {
                 line = line.trim();
-                
                 // Look for "id:" lines
                 if (line.startsWith("id:")) {
                     // Extract ID number
@@ -219,7 +244,6 @@ public class avidia {
                 // Look for "Name:" lines
                 else if (line.startsWith("Name:")) {
                     currentName = line.substring(5).trim();
-                    
                     // If we have both ID and name, add to list
                     if (currentId != null && currentName != null) {
                         DEVICE_DEFINITIONS.add(new String[]{currentId, currentName});
@@ -231,7 +255,6 @@ public class avidia {
                     currentName = null;
                 }
             }
-            
             process.waitFor();
             
             // If no devices were found, add defaults
@@ -259,7 +282,7 @@ public class avidia {
             }));
         }
     }
-    
+
     private static void startTerminalUI() {
         try {
             // Setup terminal
@@ -270,14 +293,13 @@ public class avidia {
             graphics = screen.newTextGraphics();
             
             showMainMenu();
-            
         } catch (Exception e) {
             System.err.println(RED + "Terminal UI error: " + e.getMessage() + RESET);
             System.out.println("Falling back to command-line interface...");
             showCLIMenu();
         }
     }
-    
+
     private static void cleanupTerminal() {
         if (screen != null) {
             try {
@@ -287,7 +309,7 @@ public class avidia {
             }
         }
     }
-    
+
     private static void showMainMenu() throws IOException {
         boolean running = true;
         int selectedItem = 0;
@@ -320,7 +342,6 @@ public class avidia {
             
             // Draw footer
             drawFooter("Use Arrow keys to navigate, Enter to select, Q to quit");
-            
             screen.refresh();
             
             // Handle input
@@ -378,7 +399,7 @@ public class avidia {
         cleanupTerminal();
         System.out.println(CYAN + "\nReturning to Terminal..." + RESET);
     }
-    
+
     private static void drawHeader(String title) {
         int width = screen.getTerminalSize().getColumns();
         graphics.setForegroundColor(TextColor.ANSI.CYAN);
@@ -386,27 +407,27 @@ public class avidia {
         graphics.putString(0, 1, centerText(title, width));
         graphics.putString(0, 2, "=".repeat(width));
     }
-    
+
     private static void drawFooter(String text) {
         int width = screen.getTerminalSize().getColumns();
         int height = screen.getTerminalSize().getRows();
+        
         graphics.setForegroundColor(TextColor.ANSI.BLUE);
         graphics.putString(0, height - 2, "-".repeat(width));
         graphics.setForegroundColor(TextColor.ANSI.WHITE);
         graphics.putString(0, height - 1, centerText(text, width));
     }
-    
+
     private static String centerText(String text, int width) {
         int padding = (width - text.length()) / 2;
         return " ".repeat(Math.max(0, padding)) + text;
     }
-    
+
     private static void listAVDsTUI() throws IOException {
         screen.clear();
         drawHeader("AVAILABLE VIRTUAL DEVICES");
         
         List<String> avds = getAvailableAVDs();
-        
         if (avds.isEmpty()) {
             graphics.setForegroundColor(TextColor.ANSI.YELLOW);
             graphics.putString(4, 6, "No virtual devices found.");
@@ -415,11 +436,9 @@ public class avidia {
         } else {
             graphics.setForegroundColor(TextColor.ANSI.WHITE);
             graphics.putString(4, 5, "Available AVDs:");
-            
             for (int i = 0; i < avds.size() && i < 15; i++) {
                 graphics.putString(6, 7 + i, "[" + (i+1) + "] " + avds.get(i));
             }
-            
             if (avds.size() > 15) {
                 graphics.setForegroundColor(TextColor.ANSI.YELLOW);
                 graphics.putString(6, 23, "Showing first 15 devices of " + avds.size() + " total");
@@ -430,7 +449,7 @@ public class avidia {
         screen.refresh();
         waitForEnter();
     }
-    
+
     private static void createAVDTUI() throws IOException {
         screen.clear();
         drawHeader("CREATE NEW VIRTUAL DEVICE");
@@ -472,7 +491,7 @@ public class avidia {
             };
         }
         
-        String imageTypeSelection = selectFromList(4, 16, "Select Image Type:", 
+        String imageTypeSelection = selectFromList(4, 16, "Select Image Type:",
             java.util.Arrays.stream(filteredImageTypes)
                 .map(t -> t[1])
                 .toArray(String[]::new), 15);
@@ -490,7 +509,7 @@ public class avidia {
         String[] deviceNames = DEVICE_DEFINITIONS.stream()
             .map(d -> d[1])
             .toArray(String[]::new);
-            
+        
         String deviceSelection = selectFromList(4, 20, "Select Device Model:", deviceNames, 15);
         if (deviceSelection == null) return;
         
@@ -509,7 +528,6 @@ public class avidia {
         if (!isSystemImageInstalled(packageName)) {
             screen.clear();
             drawHeader("SYSTEM IMAGE NOT INSTALLED");
-            
             graphics.setForegroundColor(TextColor.ANSI.YELLOW);
             graphics.putString(4, 6, "The required system image is not installed:");
             graphics.setForegroundColor(TextColor.ANSI.WHITE);
@@ -540,7 +558,6 @@ public class avidia {
         // Show confirmation
         screen.clear();
         drawHeader("CREATE VIRTUAL DEVICE - CONFIRMATION");
-        
         graphics.setForegroundColor(TextColor.ANSI.WHITE);
         graphics.putString(4, 6, "Device Name: " + avdName);
         graphics.putString(4, 8, "Android Version: " + apiLevel);
@@ -550,7 +567,6 @@ public class avidia {
         
         graphics.setForegroundColor(TextColor.ANSI.YELLOW);
         graphics.putString(4, 17, "Do you want to create this virtual device?");
-        
         String confirm = selectYesNo(4, 19);
         if (!"yes".equals(confirm)) {
             showMessage("Cancelled", "AVD creation cancelled");
@@ -566,14 +582,13 @@ public class avidia {
         screen.refresh();
         
         boolean success = createAVD(avdName, packageName, deviceId);
-        
         if (success) {
-            showMessage("Success", "Virtual device created successfully!\n\nStart it with:\n  avidia start " + avdName);
+            showMessage("Success", "Virtual device created successfully!\nStart it with:\navidia start " + avdName);
         } else {
             showMessage("Error", "Failed to create virtual device");
         }
     }
-    
+
     private static String inputField(int x, int y, String prompt, int maxLength) throws IOException {
         graphics.setForegroundColor(TextColor.ANSI.WHITE);
         graphics.putString(x, y, prompt);
@@ -596,7 +611,6 @@ public class avidia {
             }
             
             screen.refresh();
-            
             KeyStroke keyStroke = screen.readInput();
             if (keyStroke == null) continue;
             
@@ -636,7 +650,7 @@ public class avidia {
             }
         }
     }
-    
+
     private static String selectFromList(int x, int y, String title, String[] options, int maxHeight) throws IOException {
         if (options.length == 0) {
             showMessage("Error", "No options available");
@@ -661,7 +675,6 @@ public class avidia {
             // Display options for current page
             int startIndex = currentPage * itemsPerPage;
             int endIndex = Math.min(startIndex + itemsPerPage, options.length);
-            
             for (int i = startIndex; i < endIndex; i++) {
                 graphics.setForegroundColor(TextColor.ANSI.WHITE);
                 graphics.putString(x + 2, y + (i - startIndex), "[" + (i + 1) + "] " + options[i]);
@@ -669,7 +682,6 @@ public class avidia {
             
             graphics.setForegroundColor(TextColor.ANSI.YELLOW);
             graphics.putString(x, y + itemsPerPage + 2, "Use arrow keys to navigate, Enter to select, Esc to cancel");
-            
             screen.refresh();
             
             KeyStroke keyStroke = screen.readInput();
@@ -703,10 +715,9 @@ public class avidia {
             }
         }
     }
-    
+
     private static String selectYesNo(int x, int y) throws IOException {
         int selected = 0;
-        
         while (true) {
             graphics.setForegroundColor(TextColor.ANSI.WHITE);
             graphics.putString(x, y, "[Y] Yes    [N] No");
@@ -720,7 +731,6 @@ public class avidia {
             }
             
             screen.refresh();
-            
             KeyStroke keyStroke = screen.readInput();
             if (keyStroke == null) continue;
             
@@ -744,13 +754,12 @@ public class avidia {
             }
         }
     }
-    
+
     private static void showMessage(String title, String message) throws IOException {
         screen.clear();
         drawHeader(title);
         
         graphics.setForegroundColor(TextColor.ANSI.WHITE);
-        
         // Split message into lines
         String[] lines = message.split("\n");
         for (int i = 0; i < lines.length; i++) {
@@ -761,20 +770,19 @@ public class avidia {
         screen.refresh();
         waitForEnter();
     }
-    
+
     private static void waitForEnter() throws IOException {
         while (true) {
             KeyStroke keyStroke = screen.readInput();
             if (keyStroke == null) continue;
-            
-            if (keyStroke.getKeyType() == KeyType.Enter || 
+            if (keyStroke.getKeyType() == KeyType.Enter ||
                 (keyStroke.getKeyType() == KeyType.Character && keyStroke.getCharacter() == '\n') ||
                 keyStroke.getKeyType() == KeyType.Escape) {
                 break;
             }
         }
     }
-    
+
     private static boolean isSystemImageInstalled(String packageName) {
         try {
             ProcessBuilder pb = new ProcessBuilder(
@@ -798,7 +806,6 @@ public class avidia {
                     return true;
                 }
             }
-            
             process.waitFor();
             process.destroy();
             return false;
@@ -806,11 +813,10 @@ public class avidia {
             return false;
         }
     }
-    
+
     private static boolean installSDKPackage(String packageName) {
         try {
             List<String> command = new ArrayList<>();
-            
             if (packageName.isEmpty()) {
                 // If no package specified, let user select in TUI
                 return installImageTUIPackage();
@@ -828,7 +834,6 @@ public class avidia {
             env.put("PATH", env.get("PATH") + ":" + sdkPath + "/cmdline-tools/latest/bin");
             
             pb.redirectErrorStream(true);
-            
             Process process = pb.start();
             
             // Auto accept licenses
@@ -863,7 +868,7 @@ public class avidia {
             return false;
         }
     }
-    
+
     private static boolean installImageTUIPackage() throws IOException {
         screen.clear();
         drawHeader("INSTALL SYSTEM IMAGE");
@@ -872,7 +877,6 @@ public class avidia {
         String apiSelection = selectFromList(4, 5, "Select Android version:", ANDROID_VERSIONS.entrySet().stream()
             .map(e -> e.getKey() + " (API " + e.getValue() + ")")
             .toArray(String[]::new), 15);
-        
         if (apiSelection == null) return false;
         
         String apiLevel = ANDROID_VERSIONS.entrySet().stream()
@@ -882,11 +886,10 @@ public class avidia {
             .orElse("34");
         
         // Select image type
-        String imageTypeSelection = selectFromList(4, 10, "Select Image Type:", 
+        String imageTypeSelection = selectFromList(4, 10, "Select Image Type:",
             java.util.Arrays.stream(IMAGE_TYPES)
                 .map(t -> t[1])
                 .toArray(String[]::new), 15);
-        
         if (imageTypeSelection == null) return false;
         
         String imageType = "google_apis";
@@ -899,7 +902,6 @@ public class avidia {
         
         // Select ABI
         String abiSelection = selectFromList(4, 15, "Select Architecture:", ABI_TYPES, 10);
-        
         if (abiSelection == null) return false;
         
         String abi = "x86_64";
@@ -912,7 +914,6 @@ public class avidia {
         // Show confirmation
         screen.clear();
         drawHeader("INSTALL SYSTEM IMAGE - CONFIRMATION");
-        
         graphics.setForegroundColor(TextColor.ANSI.WHITE);
         graphics.putString(4, 6, "Android Version: " + apiSelection);
         graphics.putString(4, 8, "Image Type: " + imageTypeSelection);
@@ -940,7 +941,7 @@ public class avidia {
         
         return installSDKPackage(packageName);
     }
-    
+
     private static boolean createAVD(String avdName, String packageName, String deviceId) {
         try {
             List<String> command = new ArrayList<>();
@@ -962,7 +963,6 @@ public class avidia {
             env.put("ANDROID_SDK_ROOT", sdkPath);
             
             pb.redirectErrorStream(true);
-            
             Process process = pb.start();
             
             // Send "no" for custom hardware profile
@@ -988,25 +988,22 @@ public class avidia {
             return false;
         }
     }
-    
+
     private static void startAVDTUI() throws IOException {
         List<String> avds = getAvailableAVDs();
-        
         if (avds.isEmpty()) {
             showMessage("No AVDs Found", "No Android Virtual Devices found.\nCreate one using the 'Create New Device' option.");
             return;
         }
         
         // Select AVD to start
-        String selectedAvd = selectFromList(4, 5, "SELECT AVD TO START", 
+        String selectedAvd = selectFromList(4, 5, "SELECT AVD TO START",
             avds.toArray(new String[0]), 15);
-        
         if (selectedAvd == null) return;
         
         // Show start options
         screen.clear();
         drawHeader("START VIRTUAL DEVICE: " + selectedAvd);
-        
         graphics.setForegroundColor(TextColor.ANSI.WHITE);
         graphics.putString(4, 6, "Starting AVD: " + selectedAvd);
         
@@ -1027,7 +1024,6 @@ public class avidia {
         
         graphics.setForegroundColor(TextColor.ANSI.YELLOW);
         graphics.putString(4, 16, "Start this virtual device?");
-        
         String confirm = selectYesNo(4, 18);
         if (!"yes".equals(confirm)) {
             showMessage("Cancelled", "AVD start cancelled");
@@ -1039,7 +1035,7 @@ public class avidia {
         startAVD(selectedAvd);
         startTerminalUI(); // Return to main menu after emulator exits
     }
-    
+
     private static void startAVD(String avdName) {
         System.out.println(CYAN + "\nStarting virtual device: " + avdName + RESET);
         System.out.println(YELLOW + "Press Ctrl+C to stop the emulator" + RESET);
@@ -1081,26 +1077,23 @@ public class avidia {
             System.err.println(RED + "Failed to start virtual device: " + e.getMessage() + RESET);
         }
     }
-    
+
     private static void stopAVDTUI() throws IOException {
         List<String> avds = getRunningAVDs();
-        
         if (avds.isEmpty()) {
             showMessage("No Running AVDs", "No Android Virtual Devices are currently running.");
             return;
         }
         
         // Select AVD to stop
-        String selectedAvd = selectFromList(4, 5, "SELECT AVD TO STOP", 
+        String selectedAvd = selectFromList(4, 5, "SELECT AVD TO STOP",
             avds.toArray(new String[0]), 15);
-        
         if (selectedAvd == null) return;
         
         String avdName = selectedAvd.split(" ")[0]; // Extract AVD name from display string
         
         screen.clear();
         drawHeader("STOP VIRTUAL DEVICE");
-        
         graphics.setForegroundColor(TextColor.ANSI.WHITE);
         graphics.putString(4, 6, "Stop AVD: " + avdName);
         
@@ -1123,10 +1116,9 @@ public class avidia {
         screen.refresh();
         
         stopAVD(avdName);
-        
         showMessage("Success", "AVD '" + avdName + "' stopped successfully");
     }
-    
+
     private static void stopAVD(String avdName) {
         try {
             // Find PIDs of the emulator process for this AVD
@@ -1142,7 +1134,6 @@ public class avidia {
             while ((line = reader.readLine()) != null) {
                 pids.add(line.trim());
             }
-            
             process.waitFor();
             
             if (pids.isEmpty()) {
@@ -1166,13 +1157,12 @@ public class avidia {
             
             // Wait a bit to ensure processes are terminated
             Thread.sleep(1000);
-            
             System.out.println(GREEN + "AVD '" + avdName + "' stopped successfully" + RESET);
         } catch (Exception e) {
             System.err.println(RED + "Error stopping AVD: " + e.getMessage() + RESET);
         }
     }
-    
+
     private static List<String> getRunningAVDs() {
         List<String> avds = new ArrayList<>();
         try {
@@ -1197,31 +1187,27 @@ public class avidia {
                     }
                 }
             }
-            
             process.waitFor();
         } catch (Exception e) {
             // Ignore errors
         }
         return avds;
     }
-    
+
     private static void deleteAVDTUI() throws IOException {
         List<String> avds = getAvailableAVDs();
-        
         if (avds.isEmpty()) {
             showMessage("No AVDs Found", "No Android Virtual Devices found.");
             return;
         }
         
         // Select AVD to delete
-        String selectedAvd = selectFromList(4, 5, "SELECT AVD TO DELETE", 
+        String selectedAvd = selectFromList(4, 5, "SELECT AVD TO DELETE",
             avds.toArray(new String[0]), 15);
-        
         if (selectedAvd == null) return;
         
         screen.clear();
         drawHeader("DELETE VIRTUAL DEVICE");
-        
         graphics.setForegroundColor(TextColor.ANSI.WHITE);
         graphics.putString(4, 6, "Delete AVD: " + selectedAvd);
         
@@ -1267,14 +1253,13 @@ public class avidia {
         screen.refresh();
         
         boolean success = deleteAVD(selectedAvd);
-        
         if (success) {
             showMessage("Success", "AVD '" + selectedAvd + "' deleted successfully");
         } else {
             showMessage("Error", "Failed to delete AVD '" + selectedAvd + "'");
         }
     }
-    
+
     private static boolean isAVDRunning(String avdName) {
         try {
             ProcessBuilder pb = new ProcessBuilder("pgrep", "-f", "emulator.*-avd " + avdName);
@@ -1285,7 +1270,7 @@ public class avidia {
             return false;
         }
     }
-    
+
     private static boolean deleteAVD(String avdName) {
         try {
             List<String> command = new ArrayList<>();
@@ -1303,7 +1288,6 @@ public class avidia {
             env.put("ANDROID_SDK_ROOT", sdkPath);
             
             pb.redirectErrorStream(true);
-            
             Process process = pb.start();
             
             // Send "yes" to confirmation
@@ -1329,11 +1313,11 @@ public class avidia {
             return false;
         }
     }
-    
+
     private static void installImageTUI() throws IOException {
         installImageTUIPackage();
     }
-    
+
     private static void showSystemInfo() throws IOException {
         screen.clear();
         drawHeader("SYSTEM INFORMATION");
@@ -1378,7 +1362,7 @@ public class avidia {
         screen.refresh();
         waitForEnter();
     }
-    
+
     private static List<String> getAvailableAVDs() {
         List<String> avds = new ArrayList<>();
         try {
@@ -1402,14 +1386,13 @@ public class avidia {
                     avds.add(line.trim());
                 }
             }
-            
             process.waitFor();
         } catch (Exception e) {
             // Ignore errors, return empty list
         }
         return avds;
     }
-    
+
     private static void listAVDs() {
         System.out.println(YELLOW + "\n================================================" + RESET);
         System.out.println(BOLD + "           AVAILABLE VIRTUAL DEVICES           " + RESET);
@@ -1450,7 +1433,7 @@ public class avidia {
             System.err.println(RED + "Failed to list virtual devices: " + e.getMessage() + RESET);
         }
     }
-    
+
     private static void showCLIMenu() {
         Scanner scanner = new Scanner(System.in);
         boolean running = true;
@@ -1483,9 +1466,10 @@ public class avidia {
             System.out.println();
             System.out.println(GREEN + " [0]" + RESET + " Exit to Shell");
             System.out.println(BLUE + "================================================" + RESET);
-            System.out.print("\n" + CYAN + "Enter selection: " + RESET);
             
+            System.out.print("\n" + CYAN + "Enter selection: " + RESET);
             String choice = scanner.nextLine().trim();
+            
             switch (choice) {
                 case "1":
                     listAVDs();
@@ -1521,12 +1505,12 @@ public class avidia {
         }
         scanner.close();
     }
-    
+
     private static void waitForEnter(Scanner scanner) {
         System.out.print("\n" + YELLOW + "Press Enter to continue..." + RESET);
         scanner.nextLine();
     }
-    
+
     private static void createAVDTUI(Scanner scanner) {
         System.out.println(YELLOW + "\n================================================" + RESET);
         System.out.println(BOLD + "           CREATE VIRTUAL DEVICE              " + RESET);
@@ -1591,7 +1575,6 @@ public class avidia {
         System.out.print("\nSelect device number [3 for Pixel 5]: " + RESET);
         String deviceChoice = scanner.nextLine().trim();
         String deviceId = "pixel_5";
-        
         if (deviceChoice.matches("\\d+")) {
             int index = Integer.parseInt(deviceChoice) - 1;
             if (index >= 0 && index < DEVICE_DEFINITIONS.size()) {
@@ -1630,7 +1613,7 @@ public class avidia {
             System.out.println(YELLOW + "Device creation cancelled." + RESET);
         }
     }
-    
+
     private static void startAVDTUI(Scanner scanner) {
         List<String> avds = getAvailableAVDs();
         if (avds.isEmpty()) {
@@ -1656,7 +1639,7 @@ public class avidia {
             System.out.println(RED + "Invalid number." + RESET);
         }
     }
-    
+
     private static void stopAVDTUI(Scanner scanner) {
         List<String> runningAvds = getRunningAVDs();
         if (runningAvds.isEmpty()) {
@@ -1683,7 +1666,7 @@ public class avidia {
             System.out.println(RED + "Invalid number." + RESET);
         }
     }
-    
+
     private static void deleteAVDTUI(Scanner scanner) {
         List<String> avds = getAvailableAVDs();
         if (avds.isEmpty()) {
@@ -1702,7 +1685,6 @@ public class avidia {
             int idx = Integer.parseInt(choice) - 1;
             if (idx >= 0 && idx < avds.size()) {
                 String avdName = avds.get(idx);
-                
                 // Check if AVD is running
                 if (isAVDRunning(avdName)) {
                     System.out.println(RED + "WARNING: This AVD is currently running!" + RESET);
@@ -1730,7 +1712,7 @@ public class avidia {
             System.out.println(RED + "Invalid number." + RESET);
         }
     }
-    
+
     private static void installImageTUI(Scanner scanner) {
         System.out.println(YELLOW + "\n================================================" + RESET);
         System.out.println(BOLD + "        INSTALL SYSTEM IMAGE                  " + RESET);
@@ -1788,7 +1770,7 @@ public class avidia {
             System.out.println(YELLOW + "Installation cancelled." + RESET);
         }
     }
-    
+
     private static void showSystemInfoCLI() {
         printHeader();
         System.out.println(BOLD + "System Information:" + RESET);
@@ -1810,6 +1792,7 @@ public class avidia {
         } catch (Exception e) {
             System.out.println(RED + "  Error retrieving Java version: " + e.getMessage() + RESET);
         }
+        
         System.out.println();
         
         // KVM status
@@ -1821,6 +1804,7 @@ public class avidia {
             System.out.println(RED + "  Not available (Software acceleration only)" + RESET);
             System.out.println("  Run 'avidia suggest-kvm' for installation instructions");
         }
+        
         System.out.println();
         
         // AVD count
@@ -1833,7 +1817,7 @@ public class avidia {
             }
         }
     }
-    
+
     private static boolean validateEnvironment() {
         String androidHome = System.getenv("ANDROID_HOME");
         if (androidHome == null || androidHome.isEmpty()) {
@@ -1842,6 +1826,7 @@ public class avidia {
         
         sdkPath = androidHome;
         File sdkDir = new File(sdkPath);
+        
         if (!sdkDir.exists()) {
             System.err.println(RED + "Android SDK directory not found: " + sdkPath + RESET);
             System.err.println("Run 'sudo avidia initiate' to initiate Android SDK system-wide.");
@@ -1870,7 +1855,7 @@ public class avidia {
         
         return true;
     }
-    
+
     private static void printHeader() {
         System.out.println(CYAN + BOLD);
         System.out.println("================================================");
