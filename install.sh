@@ -6,7 +6,7 @@ set -euo pipefail
 # ================================================
 
 # Version
-AVIDIA_VERSION="latest"
+AVIDIA_VERSION="1.0.0"
 
 # Colors for output
 RED='\033[0;31m'
@@ -197,21 +197,57 @@ compile_avidia() {
         fi
     done
 
+    # If not found locally, offer to download from GitHub
     if [ -z "$JAVA_SOURCE" ]; then
-        print_error "avidia.java not found!"
+        print_warning "avidia.java not found locally!"
+        echo ""
         echo "Searched in:"
         for location in "${possible_locations[@]}"; do
             echo "  - $location"
         done
         echo ""
-        echo "Please place avidia.java in one of the above locations"
-        exit 1
+        echo "Would you like to download it from GitHub?"
+        echo "  URL: https://raw.githubusercontent.com/jimed-rand/avidia/refs/heads/main/sources/avidia.java"
+        echo ""
+        read -p "Download from GitHub? (yes/no) [yes]: " download_choice
+        
+        if [[ "${download_choice:-yes}" =~ ^(yes|y)$ ]]; then
+            print_step "Downloading avidia.java from GitHub..."
+            
+            local github_url="https://raw.githubusercontent.com/jimed-rand/avidia/refs/heads/main/sources/avidia.java"
+            local download_path="$AVIDIA_HOME/src/avidia.java"
+            
+            if command -v wget &> /dev/null; then
+                if wget -q --show-progress -O "$download_path" "$github_url"; then
+                    print_success "Downloaded avidia.java successfully"
+                    JAVA_SOURCE="$download_path"
+                else
+                    print_error "Failed to download avidia.java"
+                    exit 1
+                fi
+            elif command -v curl &> /dev/null; then
+                if curl -L --progress-bar -o "$download_path" "$github_url"; then
+                    print_success "Downloaded avidia.java successfully"
+                    JAVA_SOURCE="$download_path"
+                else
+                    print_error "Failed to download avidia.java"
+                    exit 1
+                fi
+            else
+                print_error "Neither wget nor curl found"
+                echo "Please install wget or curl, or manually place avidia.java in one of the searched locations"
+                exit 1
+            fi
+        else
+            print_error "Installation cancelled"
+            echo "Please place avidia.java in one of the above locations and run the installer again"
+            exit 1
+        fi
+    else
+        print_info "Found source: $JAVA_SOURCE"
+        # Copy source file
+        cp "$JAVA_SOURCE" "$AVIDIA_HOME/src/"
     fi
-
-    print_info "Found source: $JAVA_SOURCE"
-
-    # Copy source file
-    cp "$JAVA_SOURCE" "$AVIDIA_HOME/src/"
 
     # Compile
     cd "$AVIDIA_HOME/src"
@@ -732,13 +768,47 @@ repair_avidia() {
         fi
     done
 
+    # If not found locally, offer to download from GitHub
     if [ -z "$JAVA_SOURCE" ]; then
-        print_error "Source file not found. Cannot repair."
-        echo "Searched in:"
-        for location in "${possible_locations[@]}"; do
-            echo "  - $location"
-        done
-        exit 1
+        print_warning "Source file not found locally"
+        echo ""
+        echo "Would you like to download it from GitHub?"
+        read -p "Download from GitHub? (yes/no) [yes]: " download_choice
+        
+        if [[ "${download_choice:-yes}" =~ ^(yes|y)$ ]]; then
+            print_step "Downloading avidia.java from GitHub..."
+            
+            local github_url="https://raw.githubusercontent.com/jimed-rand/avidia/refs/heads/main/sources/avidia.java"
+            local download_path="$AVIDIA_HOME/src/avidia.java"
+            
+            mkdir -p "$AVIDIA_HOME/src"
+            
+            if command -v wget &> /dev/null; then
+                if wget -q --show-progress -O "$download_path" "$github_url"; then
+                    print_success "Downloaded successfully"
+                else
+                    print_error "Failed to download avidia.java"
+                    exit 1
+                fi
+            elif command -v curl &> /dev/null; then
+                if curl -L --progress-bar -o "$download_path" "$github_url"; then
+                    print_success "Downloaded successfully"
+                else
+                    print_error "Failed to download avidia.java"
+                    exit 1
+                fi
+            else
+                print_error "Neither wget nor curl found"
+                exit 1
+            fi
+        else
+            print_error "Cannot repair without source file"
+            echo "Searched in:"
+            for location in "${possible_locations[@]}"; do
+                echo "  - $location"
+            done
+            exit 1
+        fi
     fi
 
     # Recompile Avidia
