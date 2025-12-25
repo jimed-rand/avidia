@@ -1,13 +1,6 @@
 #!/bin/bash
 set -euo pipefail
 
-# ================================================
-#               AVIDIA INSTALLER
-# ================================================
-
-# Version
-AVIDIA_VERSION="1.0.0"
-
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
