@@ -6,7 +6,7 @@ set -euo pipefail
 # ================================================
 
 # Version
-AVIDIA_VERSION="1.0.0"
+AVIDIA_VERSION="latest"
 
 # Colors for output
 RED='\033[0;31m'
@@ -178,19 +178,37 @@ compile_avidia() {
     # Create source directory
     mkdir -p "$AVIDIA_HOME/src"
 
-    # Find avidia.java in current directory or script directory
+    # Find avidia.java in multiple possible locations
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     JAVA_SOURCE=""
 
-    if [ -f "avidia.java" ]; then
-        JAVA_SOURCE="avidia.java"
-    elif [ -f "$SCRIPT_DIR/avidia.java" ]; then
-        JAVA_SOURCE="$SCRIPT_DIR/avidia.java"
-    else
+    # Check possible locations
+    local possible_locations=(
+        "avidia.java"
+        "$SCRIPT_DIR/avidia.java"
+        "$SCRIPT_DIR/sources/avidia.java"
+        "sources/avidia.java"
+    )
+
+    for location in "${possible_locations[@]}"; do
+        if [ -f "$location" ]; then
+            JAVA_SOURCE="$location"
+            break
+        fi
+    done
+
+    if [ -z "$JAVA_SOURCE" ]; then
         print_error "avidia.java not found!"
-        echo "Please place avidia.java in the same directory as this script"
+        echo "Searched in:"
+        for location in "${possible_locations[@]}"; do
+            echo "  - $location"
+        done
+        echo ""
+        echo "Please place avidia.java in one of the above locations"
         exit 1
     fi
+
+    print_info "Found source: $JAVA_SOURCE"
 
     # Copy source file
     cp "$JAVA_SOURCE" "$AVIDIA_HOME/src/"
@@ -198,8 +216,16 @@ compile_avidia() {
     # Compile
     cd "$AVIDIA_HOME/src"
 
-    # Extract package name
+    # Extract package name (should be org.jimedrand.avidia)
     PACKAGE_NAME=$(grep "^package " avidia.java | head -1 | cut -d' ' -f2 | tr -d ';')
+    
+    if [ -z "$PACKAGE_NAME" ]; then
+        print_error "Could not extract package name from source file"
+        exit 1
+    fi
+    
+    print_info "Package: $PACKAGE_NAME"
+    
     PACKAGE_PATH=$(echo "$PACKAGE_NAME" | tr '.' '/')
 
     # Create package directory structure
@@ -216,10 +242,18 @@ compile_avidia() {
         exit 1
     fi
 
-    # Create JAR file
+    # Create JAR file with correct main class
+    # The main class should be org.jimedrand.avidia.avidia (package.classname)
     print_info "Creating JAR file..."
     cd "$AVIDIA_HOME/classes"
-    jar cfe "$AVIDIA_LIB_DIR/avidia.jar" "$PACKAGE_NAME.avidia" .
+    
+    # Create manifest file
+    cat > manifest.txt << EOF
+Main-Class: ${PACKAGE_NAME}.avidia
+EOF
+    
+    jar cfm "$AVIDIA_LIB_DIR/avidia.jar" manifest.txt .
+    rm manifest.txt
 
     if [ -f "$AVIDIA_LIB_DIR/avidia.jar" ]; then
         print_success "JAR file created successfully"
@@ -281,7 +315,7 @@ fi
 mkdir -p "$AVD_HOME"
 mkdir -p "$ANDROID_SDK_ROOT"
 
-# Run Java application
+# Run Java application (main class is org.jimedrand.avidia.avidia)
 java -cp "$AVIDIA_LIB/avidia.jar:$AVIDIA_LIB/lanterna.jar" org.jimedrand.avidia.avidia "$@"
 EOF
 
@@ -405,10 +439,10 @@ update_shell_config() {
         shell_updated=true
     fi
 
-    # Add Avidia environment sourcing (optional)
+    # Add Avidia environment sourcing (optional, commented out by default)
     if ! grep -q "avidia/env.sh" "$config_file" 2>/dev/null; then
         echo '' >> "$config_file"
-        echo '# Load Avidia environment (optional)' >> "$config_file"
+        echo '# Load Avidia environment (optional - uncomment to enable)' >> "$config_file"
         echo '# source "$HOME/.avidia/env.sh"' >> "$config_file"
         shell_updated=true
     fi
@@ -459,8 +493,9 @@ install_android_cli_tools() {
     fi
 
     # Set permissions
-    find "$AVIDIA_SDK_DIR/cmdline-tools" -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
-    find "$AVIDIA_SDK_DIR/cmdline-tools" -name "*.bat" -exec chmod +x {} \; 2>/dev/null || true
+    find "$AVIDIA_SDK_DIR/cmdline-tools" -type f -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
+    find "$AVIDIA_SDK_DIR/cmdline-tools" -type f -name "sdkmanager" -exec chmod +x {} \; 2>/dev/null || true
+    find "$AVIDIA_SDK_DIR/cmdline-tools" -type f -name "avdmanager" -exec chmod +x {} \; 2>/dev/null || true
 
     # Clean up
     cd ..
@@ -502,7 +537,7 @@ show_instructions() {
     echo "  1. Reload your shell configuration:"
     echo "     ${CYAN}source ~/.bashrc${NC}  # or restart your terminal"
     echo ""
-    echo "  2. Setup Avidia environment:"
+    echo "  2. Setup Avidia environment (if not done already):"
     echo "     ${CYAN}avidia setup${NC}"
     echo ""
     echo "  3. Launch the Text User Interface:"
@@ -517,8 +552,8 @@ show_instructions() {
     echo "  ├── sdk/              # Android SDK"
     echo "  ├── avd/              # Virtual Devices"
     echo "  ├── lib/              # Libraries (JAR files)"
-    echo "  ├── env.sh           # Environment configuration"
-    echo "  └── avidia.conf      # Configuration file"
+    echo "  ├── env.sh            # Environment configuration"
+    echo "  └── avidia.conf       # Configuration file"
     echo ""
     echo "${YELLOW}${BOLD}Commands:${NC}"
     echo "  ${CYAN}avidia tui${NC}              - Launch Text User Interface"
@@ -597,6 +632,14 @@ uninstall_avidia() {
     echo -e "${YELLOW}${BOLD}UNINSTALL AVIDIA${NC}"
     echo ""
 
+    # Check if Avidia is installed
+    if [ ! -d "$AVIDIA_HOME" ]; then
+        print_error "Avidia is not installed at: $AVIDIA_HOME"
+        echo ""
+        echo "Nothing to uninstall."
+        exit 0
+    fi
+
     echo "This will remove:"
     echo "  • $AVIDIA_HOME (including all SDK files and AVDs)"
     echo "  • $AVIDIA_SCRIPT_PATH"
@@ -616,6 +659,7 @@ uninstall_avidia() {
     print_step "Stopping any running emulators..."
     # Try to stop any running emulators
     pkill -f "emulator.*-avd" 2>/dev/null || true
+    sleep 2
 
     print_step "Removing Avidia directories..."
     if [ -d "$AVIDIA_HOME" ]; then
@@ -637,6 +681,8 @@ uninstall_avidia() {
     # Remove Avidia references from shell configs
     for config in "$HOME/.bashrc" "$HOME/.zshrc"; do
         if [ -f "$config" ]; then
+            # Backup before modifying
+            cp "$config" "${config}.avidia-backup" 2>/dev/null || true
             sed -i '/avidia\/env.sh/d' "$config" 2>/dev/null || true
             sed -i '/\.avidia/d' "$config" 2>/dev/null || true
         fi
@@ -668,13 +714,35 @@ repair_avidia() {
 
     print_step "Repairing Avidia installation..."
 
-    # Recompile Avidia
-    if [ -f "$AVIDIA_HOME/src/avidia.java" ]; then
-        compile_avidia
-    else
+    # Check if source file is available
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    JAVA_SOURCE=""
+
+    local possible_locations=(
+        "avidia.java"
+        "$SCRIPT_DIR/avidia.java"
+        "$SCRIPT_DIR/sources/avidia.java"
+        "sources/avidia.java"
+    )
+
+    for location in "${possible_locations[@]}"; do
+        if [ -f "$location" ]; then
+            JAVA_SOURCE="$location"
+            break
+        fi
+    done
+
+    if [ -z "$JAVA_SOURCE" ]; then
         print_error "Source file not found. Cannot repair."
+        echo "Searched in:"
+        for location in "${possible_locations[@]}"; do
+            echo "  - $location"
+        done
         exit 1
     fi
+
+    # Recompile Avidia
+    compile_avidia
 
     # Recreate script
     create_avidia_script
