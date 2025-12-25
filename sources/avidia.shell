@@ -1,6 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
+# ================================================
+#               AVIDIA - Android Virtual Device Manager
+# ================================================
+
 # Path definitions
 readonly AVIDIA_JAR_DIR="/usr/share/java/avidia"
 readonly AVIDIA_JAR="$AVIDIA_JAR_DIR/avidia.jar"
@@ -8,7 +12,7 @@ readonly LANTERNA_JAR="$AVIDIA_JAR_DIR/lanterna.jar"
 readonly JAVA_CMD="/usr/bin/java"
 readonly ANDROID_HOME="/usr/share/android"
 readonly CONFIG_FILE="/etc/avidia.conf"
-readonly CLI_TOOLS_ZIP="commandlinetools-linux-13114758_latest.zip"
+readonly CLI_TOOLS_URL="https://dl.google.com/android/repository/commandlinetools-linux-*.zip"
 SDK_PERMISSION_FIXED=false
 
 print_header() {
@@ -104,16 +108,16 @@ check_jdk() {
                 echo "  sudo pacman -S jdk-openjdk"
                 ;;
             apt)
-                echo "  sudo apt install openjdk-17-jdk"
+                echo "  sudo apt install default-jdk"
                 ;;
             dnf)
-                echo "  sudo dnf install java-17-openjdk-devel"
+                echo "  sudo dnf install java-latest-openjdk-devel"
                 ;;
             zypper)
-                echo "  sudo zypper install java-17-openjdk-devel"
+                echo "  sudo zypper install java-latest-openjdk-devel"
                 ;;
             apk)
-                echo "  sudo apk add openjdk17"
+                echo "  sudo apk add openjdk"
                 ;;
             *)
                 echo "  Download from: https://adoptium.net/"
@@ -318,11 +322,11 @@ create_avd() {
         echo "==================================="
         echo ""
         echo "Usage: avidia create <avd-name>"
-        echo "Example: avidia create Pixel_5_API_34"
+        echo "Example: avidia create My_Emulator"
         echo ""
         echo "Additional options:"
         echo "  --device=<device-id>    Device definition (default: pixel_5)"
-        echo "  --package=<package>     System image package"
+        echo "  --package=<package>     System image package (optional)"
         echo ""
         echo "Available device definitions (partial list):"
         echo "  pixel_5, pixel_6, pixel_7, Nexus_5, Nexus_6"
@@ -360,20 +364,20 @@ create_avd() {
         echo "Select System Image"
         echo "=================="
         echo ""
-        echo "Available system images (partial list):"
-        echo "(Note: Install system images first with 'avidia install-sdk <api-level>')"
+        echo "Available system images (installed):"
         
         local ACTUAL_USER="${SUDO_USER:-$USER}"
         sudo -u "$ACTUAL_USER" bash -c "export ANDROID_HOME='$ANDROID_HOME' && '$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager' --list_installed --sdk_root='$ANDROID_HOME' 2>/dev/null | grep 'system-images;'"
         echo ""
         echo "For more options, install additional system images with:"
-        echo "  avidia install-sdk <api-level> [type] [abi]"
+        echo "  avidia install-sdk"
         echo ""
-        read -p "Enter system image package (e.g., 'system-images;android-34;google_apis;x86_64'): " PACKAGE
+        read -p "Enter system image package (press Enter to use default or launch TUI): " PACKAGE
         
         if [[ -z "$PACKAGE" ]]; then
-            print_error "Package is required!"
-            exit 1
+            print_info "Launching TUI to select system image..."
+            launch_tui
+            exit 0
         fi
     fi
     
@@ -392,7 +396,7 @@ create_avd() {
         print_warning "System image '$PACKAGE' is not installed."
         read -p "Would you like to install it now? (y/n): " confirm
         if [[ "$confirm" =~ ^[Yy]$ ]]; then
-            install_sdk "$(echo $PACKAGE | cut -d';' -f3 | sed 's/android-//')"
+            install_sdk "$PACKAGE"
         else
             print_error "Cannot create AVD without the required system image."
             exit 1
@@ -422,7 +426,7 @@ start_avd() {
         echo "==============================="
         echo ""
         echo "Usage: avidia start <avd-name>"
-        echo "Example: avidia start Pixel_5_API_34"
+        echo "Example: avidia start My_Emulator"
         echo ""
         echo "Available AVDs:"
         list_avds
@@ -485,7 +489,7 @@ start_avd_background() {
     
     if [[ -z "${1:-}" ]]; then
         print_error "Usage: avidia start-bg <avd-name>"
-        echo "Example: avidia start-bg Pixel_5_API_34"
+        echo "Example: avidia start-bg My_Emulator"
         exit 1
     fi
     
@@ -529,7 +533,7 @@ start_avd_background() {
 stop_avd() {
     if [[ -z "${1:-}" ]]; then
         print_error "Usage: avidia stop <avd-name>"
-        echo "Example: avidia stop Pixel_5_API_34"
+        echo "Example: avidia stop My_Emulator"
         exit 1
     fi
     
@@ -669,61 +673,51 @@ install_sdk() {
         echo "Install Android System Image"
         echo "==========================="
         echo ""
-        echo "Usage: avidia install-sdk <api-level> [type] [abi]"
+        echo "Usage: avidia install-sdk [package]"
         echo ""
         echo "Examples:"
-        echo "  avidia install-sdk 34                  # Install Android 14 (Google APIs)"
-        echo "  avidia install-sdk 34 google_apis      # With Google APIs"
-        echo "  avidia install-sdk 34 google_apis_playstore x86_64 # With Google Play Store"
-        echo "  avidia install-sdk 34 android x86_64   # Pure AOSP"
+        echo "  avidia install-sdk                  # Launch TUI to select image"
+        echo "  avidia install-sdk system-images;android-34;google_apis;x86_64"
         echo ""
-        echo "Available API levels and Android versions:"
-        echo "  34 - Android 14 (Upside Down Cake)"
-        echo "  33 - Android 13 (Tiramisu)"
-        echo "  32 - Android 12L"
-        echo "  31 - Android 12"
-        echo "  30 - Android 11"
-        echo "  29 - Android 10"
+        echo "To see available packages:"
+        echo "  avidia list-images"
         echo ""
-        echo "Available types:"
-        echo "  google_apis         - Android with Google APIs"
-        echo "  google_apis_playstore - With Google Play Store (recommended for app testing)"
-        echo "  android             - Pure AOSP (no Google services)"
-        echo ""
-        echo "Available ABIs:"
-        echo "  x86_64    - 64-bit Intel/AMD (recommended)"
-        echo "  x86       - 32-bit Intel/AMD"
-        echo "  arm64-v8a - 64-bit ARM (slower emulation)"
+        echo "You can also use the interactive TUI:"
+        echo "  avidia tui"
         exit 1
     fi
     
-    local API_LEVEL="$1"
-    local IMAGE_TYPE="${2:-google_apis}"
-    local ABI="${3:-x86_64}"
-    
-    # Map API level to Android version name untuk display
-    local ANDROID_VERSION=""
-    case "$API_LEVEL" in
-        36) ANDROID_VERSION="Android 16 (Vanilla Ice Cream)" ;;
-        35) ANDROID_VERSION="Android 15 (Blackjack)" ;;
-        34) ANDROID_VERSION="Android 14 (Upside Down Cake)" ;;
-        33) ANDROID_VERSION="Android 13 (Tiramisu)" ;;
-        32) ANDROID_VERSION="Android 12L" ;;
-        31) ANDROID_VERSION="Android 12" ;;
-        30) ANDROID_VERSION="Android 11" ;;
-        29) ANDROID_VERSION="Android 10" ;;
-        28) ANDROID_VERSION="Android 9 (Pie)" ;;
-        *) ANDROID_VERSION="Android API $API_LEVEL" ;;
-    esac
-    
-    local PACKAGE="system-images;android-$API_LEVEL;$IMAGE_TYPE;$ABI"
+    local PACKAGE="$1"
     local ACTUAL_USER="${SUDO_USER:-$USER}"
+    
+    if [[ -z "$PACKAGE" ]]; then
+        # Jika tidak ada package yang diberikan, tampilkan daftar yang tersedia
+        print_header
+        echo "Available System Images"
+        echo "======================="
+        echo ""
+        echo "Installed images:"
+        sudo -u "$ACTUAL_USER" bash -c "export ANDROID_HOME='$ANDROID_HOME' && '$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager' --list_installed --sdk_root='$ANDROID_HOME' 2>/dev/null | grep 'system-images;'"
+        echo ""
+        echo "Available images to install (first 30):"
+        sudo -u "$ACTUAL_USER" bash -c "export ANDROID_HOME='$ANDROID_HOME' && '$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager' --list --sdk_root='$ANDROID_HOME' 2>/dev/null | grep 'system-images;' | head -30"
+        echo ""
+        echo "Example package format:"
+        echo "  system-images;android-34;google_apis;x86_64"
+        echo ""
+        read -p "Enter package name to install (or press Enter to launch TUI): " PACKAGE
+        
+        if [[ -z "$PACKAGE" ]]; then
+            print_info "Launching TUI to select system image..."
+            launch_tui
+            exit 0
+        fi
+    fi
     
     print_header
     echo "Installing Android System Image"
     echo "================================"
     echo ""
-    echo "Android Version: $ANDROID_VERSION"
     echo "Package: $PACKAGE"
     echo ""
     echo "This may take a while depending on your internet connection..."
@@ -765,9 +759,6 @@ install_sdk() {
         echo ""
         echo "You can now create an AVD with:"
         echo "  avidia create <name> --package='$PACKAGE'"
-        echo ""
-        echo "Example:"
-        echo "  avidia create Pixel_5_API_${API_LEVEL} --package='$PACKAGE'"
     else
         print_error "Failed to install system image. Check your internet connection and available disk space."
         exit 1
@@ -821,7 +812,9 @@ list_images() {
     
     echo ""
     echo "To install a system image:"
-    echo "  avidia install-sdk <api-level> [type] [abi]"
+    echo "  avidia install-sdk <package-name>"
+    echo "Or use the interactive TUI:"
+    echo "  avidia tui"
 }
 
 # System info
@@ -834,7 +827,7 @@ system_info() {
     echo "=================="
     echo ""
     
-    echo "Avidia Version:   1.0.0"
+    echo "AVIDIA Status:    Operational"
     echo "Android SDK Path: $ANDROID_HOME"
     echo ""
     
@@ -990,7 +983,7 @@ initiate_sdk() {
     echo ""
     echo "Requirements:"
     echo "  - ~5GB free disk space"
-    echo "  - JDK 17 or newer (already verified)"
+    echo "  - JDK (already verified)"
     echo ""
     read -p "Proceed with installation? (y/n): " confirm
     
@@ -1035,16 +1028,31 @@ EOF
     source /etc/profile.d/android-sdk.sh
     print_success "Environment variables configured"
     
-    # Step 3: Download or use cached CLI Tools
-    print_info "Step 3: Checking Android CLI Tools"
+    # Step 3: Download latest CLI Tools
+    print_info "Step 3: Downloading Android CLI Tools"
     TEMP_DIR=$(mktemp -d)
     cd "$TEMP_DIR"
     
-    local download_url="https://dl.google.com/android/repository/$CLI_TOOLS_ZIP"
+    # Get the latest commandlinetools zip file
+    print_info "Finding latest Android command line tools..."
+    local tools_url=""
+    if command -v wget &> /dev/null; then
+        tools_url=$(wget -qO- https://developer.android.com/studio | grep -oP 'commandlinetools-linux-\d+_latest.zip' | head -1)
+    elif command -v curl &> /dev/null; then
+        tools_url=$(curl -s https://developer.android.com/studio | grep -oP 'commandlinetools-linux-\d+_latest.zip' | head -1)
+    fi
     
-    if [[ -f "$USER_CACHE_DIR/$CLI_TOOLS_ZIP" ]]; then
+    if [[ -z "$tools_url" ]]; then
+        print_warning "Could not determine latest tools version. Using generic URL."
+        tools_url="commandlinetools-linux.zip"
+    fi
+    
+    local download_url="https://dl.google.com/android/repository/$tools_url"
+    
+    # Check if cached
+    if [[ -f "$USER_CACHE_DIR/$tools_url" ]]; then
         print_info "Using cached CLI Tools from $USER_CACHE_DIR"
-        cp "$USER_CACHE_DIR/$CLI_TOOLS_ZIP" .
+        cp "$USER_CACHE_DIR/$tools_url" .
     else
         print_info "Downloading Android CLI Tools from $download_url"
         echo "This may take a few minutes depending on your internet connection..."
@@ -1077,13 +1085,13 @@ EOF
         # Cache the downloaded file
         print_info "Caching CLI Tools for future use..."
         mkdir -p "$USER_CACHE_DIR"
-        cp "$CLI_TOOLS_ZIP" "$USER_CACHE_DIR/"
-        chown "$ACTUAL_USER:$ACTUAL_USER" "$USER_CACHE_DIR/$CLI_TOOLS_ZIP" 2>/dev/null || true
+        cp "$tools_url" "$USER_CACHE_DIR/"
+        chown "$ACTUAL_USER:$ACTUAL_USER" "$USER_CACHE_DIR/$tools_url" 2>/dev/null || true
     fi
     
     # Step 4: Extract tools
     print_info "Step 4: Extracting tools"
-    if ! unzip -q "$CLI_TOOLS_ZIP"; then
+    if ! unzip -q "$tools_url"; then
         print_error "Failed to extract CLI tools. Is unzip installed?"
         exit 1
     fi
@@ -1114,9 +1122,9 @@ EOF
     print_success "Android SDK initialization completed successfully!"
     echo ""
     echo "Next steps:"
-    echo "  1. Install a system image: avidia install-sdk 34"
-    echo "  2. Create an AVD: avidia create MyPixelDevice"
-    echo "  3. Start the AVD: avidia start MyPixelDevice"
+    echo "  1. Install a system image: avidia install-sdk"
+    echo "  2. Create an AVD: avidia create MyDevice"
+    echo "  3. Start the AVD: avidia start MyDevice"
     echo ""
     suggest_kvm_installation
 }
@@ -1149,14 +1157,12 @@ show_help() {
     echo ""
     echo "Examples:"
     echo "  sudo avidia initiate"
-    echo "  avidia install-sdk 34"
-    echo "  avidia create Pixel_5_API_34 --device=pixel_5 --package=system-images;android-34;google_apis;x86_64"
-    echo "  avidia start Pixel_5_API_34"
+    echo "  avidia install-sdk"
+    echo "  avidia create MyDevice"
+    echo "  avidia start MyDevice"
     echo ""
     echo "For beginners, start with the Text User Interface:"
     echo "  avidia tui"
-    echo ""
-    echo "Documentation: https://github.com/jimedrand/avidia"
 }
 
 # Java TUI mode
@@ -1179,6 +1185,7 @@ launch_tui() {
     echo "Press Ctrl+C to return to shell at any time"
     echo ""
     
+    # Gunakan sudo -u untuk menjalankan sebagai user biasa
     sudo -u "$ACTUAL_USER" "$JAVA_CMD" \
         -cp "$AVIDIA_JAR:$LANTERNA_JAR" \
         org.jimedrand.avidia.avidia \
@@ -1263,4 +1270,5 @@ main() {
     esac
 }
 
+# Jalankan main function dengan semua argumen
 main "$@"
