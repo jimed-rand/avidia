@@ -14,7 +14,7 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m' # No Color
 
-# Directories
+# Directories (must match install.sh)
 AVIDIA_HOME="$HOME/.avidia"
 AVIDIA_BIN_DIR="$HOME/.local/bin"
 AVIDIA_SCRIPT_PATH="$AVIDIA_BIN_DIR/avidia"
@@ -43,6 +43,57 @@ print_step() {
     echo -e "${BLUE}➜ $1${NC}"
 }
 
+check_installation() {
+    print_step "Checking for Avidia installation..."
+    
+    local found=false
+    
+    if [ -d "$AVIDIA_HOME" ]; then
+        print_success "Found Avidia directory: $AVIDIA_HOME"
+        found=true
+    fi
+    
+    if [ -f "$AVIDIA_SCRIPT_PATH" ]; then
+        print_success "Found Avidia script: $AVIDIA_SCRIPT_PATH"
+        found=true
+    fi
+    
+    if [ "$found" = false ]; then
+        print_error "Avidia is not installed on this system"
+        echo ""
+        echo "Nothing to uninstall."
+        exit 0
+    fi
+}
+
+show_installation_info() {
+    echo ""
+    echo "Current installation:"
+    echo ""
+    
+    if [ -d "$AVIDIA_HOME" ]; then
+        echo "  Directory: ${CYAN}$AVIDIA_HOME${NC}"
+        
+        # Calculate size
+        local dir_size=$(du -sh "$AVIDIA_HOME" 2>/dev/null | cut -f1)
+        echo "  Size: ${YELLOW}$dir_size${NC}"
+        
+        # Count AVDs
+        local avd_count=0
+        if [ -d "$AVIDIA_HOME/avd" ]; then
+            avd_count=$(find "$AVIDIA_HOME/avd" -maxdepth 1 -type d | wc -l)
+            avd_count=$((avd_count - 1)) # Subtract the parent directory
+        fi
+        echo "  Virtual Devices: ${YELLOW}$avd_count${NC}"
+    fi
+    
+    if [ -f "$AVIDIA_SCRIPT_PATH" ]; then
+        echo "  Script: ${CYAN}$AVIDIA_SCRIPT_PATH${NC}"
+    fi
+    
+    echo ""
+}
+
 stop_running_emulators() {
     print_step "Checking for running emulators..."
 
@@ -63,6 +114,15 @@ stop_running_emulators() {
                 print_step "Stopping all emulators..."
                 pkill -f "emulator.*-avd" 2>/dev/null || true
                 sleep 2
+                
+                # Verify they're stopped
+                local still_running=$(pgrep -f "emulator.*-avd" 2>/dev/null | wc -l)
+                if [ "$still_running" -gt 0 ]; then
+                    print_warning "Some emulators are still running, force stopping..."
+                    pkill -9 -f "emulator.*-avd" 2>/dev/null || true
+                    sleep 1
+                fi
+                
                 print_success "Emulators stopped"
                 ;;
             2)
@@ -82,114 +142,6 @@ stop_running_emulators() {
     fi
 }
 
-remove_avidia_directories() {
-    print_step "Removing Avidia directories..."
-
-    if [ -d "$AVIDIA_HOME" ]; then
-        # Show what will be removed
-        echo ""
-        echo "The following will be deleted:"
-        echo "  • $AVIDIA_HOME/sdk/ (Android SDK files)"
-        echo "  • $AVIDIA_HOME/avd/ (Virtual devices)"
-        echo "  • $AVIDIA_HOME/lib/ (Libraries)"
-        echo "  • $AVIDIA_HOME/* (Configuration files)"
-        echo ""
-
-        read -p "Continue with deletion? (yes/no): " confirm
-        if [[ ! "$confirm" =~ ^(yes|y)$ ]]; then
-            print_success "Deletion cancelled"
-            return
-        fi
-
-        rm -rf "$AVIDIA_HOME"
-        print_success "Removed $AVIDIA_HOME"
-    else
-        print_success "AVIDIA directory not found (already removed?)"
-    fi
-}
-
-remove_avidia_script() {
-    print_step "Removing Avidia script..."
-
-    if [ -f "$AVIDIA_SCRIPT_PATH" ]; then
-        rm -f "$AVIDIA_SCRIPT_PATH"
-        print_success "Removed $AVIDIA_SCRIPT_PATH"
-    else
-        print_success "Avidia script not found"
-    fi
-
-    # Also remove any other avidia scripts
-    local other_scripts=(
-        "$HOME/bin/avidia"
-        "/usr/local/bin/avidia"
-        "/usr/bin/avidia"
-    )
-
-    for script in "${other_scripts[@]}"; do
-        if [ -f "$script" ] && [ -L "$script" ]; then
-            rm -f "$script"
-            print_success "Removed symlink: $script"
-        fi
-    done
-}
-
-cleanup_shell_config() {
-    print_step "Cleaning up shell configuration..."
-
-    local config_files=(
-        "$HOME/.bashrc"
-        "$HOME/.zshrc"
-        "$HOME/.bash_profile"
-        "$HOME/.profile"
-        "$HOME/.config/fish/config.fish"
-    )
-
-    local cleaned=false
-
-    for config in "${config_files[@]}"; do
-        if [ -f "$config" ]; then
-            # Backup the config file
-            cp "$config" "${config}.avidia-backup" 2>/dev/null || true
-
-            # Remove Avidia environment sourcing
-            if grep -q "avidia/env.sh" "$config"; then
-                sed -i '/avidia\/env.sh/d' "$config"
-                cleaned=true
-            fi
-
-            # Remove any AVIDIA-related lines
-            if grep -q "AVIDIA" "$config" || grep -q "\.avidia" "$config"; then
-                sed -i '/AVIDIA/d' "$config"
-                sed -i '/\.avidia/d' "$config"
-                cleaned=true
-            fi
-        fi
-    done
-
-    if [ "$cleaned" = true ]; then
-        print_success "Shell configuration cleaned"
-    else
-        print_success "No Avidia references found in shell config"
-    fi
-}
-
-remove_environment_variables() {
-    print_step "Removing environment variables..."
-
-    # Unset variables in current session
-    unset ANDROID_SDK_ROOT 2>/dev/null || true
-    unset ANDROID_HOME 2>/dev/null || true
-    unset AVD_HOME 2>/dev/null || true
-
-    # Remove from PATH
-    export PATH=$(echo "$PATH" | sed -e "s|:$HOME/.avidia/sdk/cmdline-tools/latest/bin||g")
-    export PATH=$(echo "$PATH" | sed -e "s|:$HOME/.avidia/sdk/platform-tools||g")
-    export PATH=$(echo "$PATH" | sed -e "s|:$HOME/.avidia/sdk/emulator||g")
-    export PATH=$(echo "$PATH" | sed -e "s|:$HOME/.local/bin||g")
-
-    print_success "Environment variables removed"
-}
-
 show_backup_options() {
     print_step "Backup options..."
 
@@ -206,33 +158,174 @@ show_backup_options() {
 
     case "${choice:-4}" in
         1)
-            mkdir -p "$backup_dir"
-            if [ -d "$AVIDIA_HOME/avd" ]; then
+            if [ -d "$AVIDIA_HOME/avd" ] && [ "$(ls -A "$AVIDIA_HOME/avd")" ]; then
+                mkdir -p "$backup_dir"
+                print_step "Backing up AVDs..."
                 cp -r "$AVIDIA_HOME/avd" "$backup_dir/"
                 print_success "AVDs backed up to: $backup_dir/avd"
+            else
+                print_warning "No AVDs found to backup"
             fi
             ;;
         2)
-            mkdir -p "$backup_dir"
-            if [ -d "$AVIDIA_HOME/sdk" ]; then
+            if [ -d "$AVIDIA_HOME/sdk" ] && [ "$(ls -A "$AVIDIA_HOME/sdk")" ]; then
+                mkdir -p "$backup_dir"
+                print_step "Backing up SDK..."
                 cp -r "$AVIDIA_HOME/sdk" "$backup_dir/"
                 print_success "SDK backed up to: $backup_dir/sdk"
+            else
+                print_warning "No SDK found to backup"
             fi
             ;;
         3)
-            mkdir -p "$backup_dir"
             if [ -d "$AVIDIA_HOME" ]; then
+                mkdir -p "$backup_dir"
+                print_step "Creating complete backup..."
                 cp -r "$AVIDIA_HOME" "$backup_dir/"
-                print_success "Complete backup to: $backup_dir"
+                print_success "Complete backup created at: $backup_dir"
+            else
+                print_warning "No Avidia directory found to backup"
             fi
             ;;
         4)
             print_success "Skipping backup"
             ;;
         *)
-            print_error "Invalid choice"
+            print_error "Invalid choice, skipping backup"
             ;;
     esac
+}
+
+remove_avidia_directories() {
+    print_step "Removing Avidia directories..."
+
+    if [ -d "$AVIDIA_HOME" ]; then
+        # Show what will be removed
+        echo ""
+        echo "The following will be deleted:"
+        echo "  • $AVIDIA_HOME/sdk/ (Android SDK files)"
+        echo "  • $AVIDIA_HOME/avd/ (Virtual devices)"
+        echo "  • $AVIDIA_HOME/lib/ (Libraries)"
+        echo "  • $AVIDIA_HOME/* (Configuration files)"
+        echo ""
+
+        read -p "Continue with deletion? (yes/no): " confirm
+        if [[ ! "$confirm" =~ ^(yes|y)$ ]]; then
+            print_warning "Deletion cancelled"
+            echo "Uninstallation aborted."
+            exit 0
+        fi
+
+        rm -rf "$AVIDIA_HOME"
+        print_success "Removed $AVIDIA_HOME"
+    else
+        print_warning "AVIDIA directory not found (already removed?)"
+    fi
+}
+
+remove_avidia_script() {
+    print_step "Removing Avidia script..."
+
+    if [ -f "$AVIDIA_SCRIPT_PATH" ]; then
+        rm -f "$AVIDIA_SCRIPT_PATH"
+        print_success "Removed $AVIDIA_SCRIPT_PATH"
+    else
+        print_warning "Avidia script not found"
+    fi
+
+    # Also remove any other avidia scripts or symlinks
+    local other_scripts=(
+        "$HOME/bin/avidia"
+        "/usr/local/bin/avidia"
+        "/usr/bin/avidia"
+    )
+
+    for script in "${other_scripts[@]}"; do
+        if [ -f "$script" ] || [ -L "$script" ]; then
+            if rm -f "$script" 2>/dev/null; then
+                print_success "Removed: $script"
+            fi
+        fi
+    done
+}
+
+cleanup_shell_config() {
+    print_step "Cleaning up shell configuration..."
+
+    local config_files=(
+        "$HOME/.bashrc"
+        "$HOME/.zshrc"
+        "$HOME/.bash_profile"
+        "$HOME/.profile"
+        "$HOME/.config/fish/config.fish"
+    )
+
+    local cleaned=false
+    local backup_created=false
+
+    for config in "${config_files[@]}"; do
+        if [ -f "$config" ]; then
+            # Backup the config file (only once per file)
+            if [ ! -f "${config}.avidia-backup" ]; then
+                cp "$config" "${config}.avidia-backup" 2>/dev/null || true
+                backup_created=true
+            fi
+
+            # Remove Avidia environment sourcing
+            if grep -q "avidia/env.sh" "$config" 2>/dev/null; then
+                sed -i '/avidia\/env.sh/d' "$config"
+                cleaned=true
+            fi
+
+            # Remove any AVIDIA-related lines
+            if grep -q "AVIDIA\|\.avidia" "$config" 2>/dev/null; then
+                sed -i '/AVIDIA/d' "$config"
+                sed -i '/\.avidia/d' "$config"
+                cleaned=true
+            fi
+            
+            # Remove Android environment variables set by Avidia
+            if grep -q "ANDROID_SDK_ROOT.*\.avidia\|ANDROID_HOME.*\.avidia\|AVD_HOME.*\.avidia" "$config" 2>/dev/null; then
+                sed -i '/ANDROID_SDK_ROOT.*\.avidia/d' "$config"
+                sed -i '/ANDROID_HOME.*\.avidia/d' "$config"
+                sed -i '/AVD_HOME.*\.avidia/d' "$config"
+                cleaned=true
+            fi
+        fi
+    done
+
+    if [ "$cleaned" = true ]; then
+        print_success "Shell configuration cleaned"
+        if [ "$backup_created" = true ]; then
+            print_info "Backups created with .avidia-backup extension"
+        fi
+    else
+        print_success "No Avidia references found in shell config"
+    fi
+}
+
+remove_environment_variables() {
+    print_step "Removing environment variables..."
+
+    # Unset variables in current session (only if they point to Avidia)
+    if [[ "${ANDROID_SDK_ROOT:-}" == *".avidia"* ]]; then
+        unset ANDROID_SDK_ROOT 2>/dev/null || true
+    fi
+    
+    if [[ "${ANDROID_HOME:-}" == *".avidia"* ]]; then
+        unset ANDROID_HOME 2>/dev/null || true
+    fi
+    
+    if [[ "${AVD_HOME:-}" == *".avidia"* ]]; then
+        unset AVD_HOME 2>/dev/null || true
+    fi
+
+    # Remove Avidia paths from PATH (current session)
+    export PATH=$(echo "$PATH" | sed -e "s|:$HOME/.avidia/sdk/cmdline-tools/latest/bin||g" | sed -e "s|$HOME/.avidia/sdk/cmdline-tools/latest/bin:||g")
+    export PATH=$(echo "$PATH" | sed -e "s|:$HOME/.avidia/sdk/platform-tools||g" | sed -e "s|$HOME/.avidia/sdk/platform-tools:||g")
+    export PATH=$(echo "$PATH" | sed -e "s|:$HOME/.avidia/sdk/emulator||g" | sed -e "s|$HOME/.avidia/sdk/emulator:||g")
+
+    print_success "Environment variables removed"
 }
 
 show_final_message() {
@@ -252,7 +345,7 @@ show_final_message() {
     echo "Note:"
     echo "  • Any running emulators were stopped"
     echo "  • Shell config backups were created as *.avidia-backup"
-    echo "  • You may need to restart your terminal"
+    echo "  • You may need to restart your terminal for changes to take effect"
     echo ""
     echo -e "${YELLOW}Thank you for using Avidia!${NC}"
     echo ""
@@ -265,11 +358,9 @@ confirm_uninstallation() {
     echo ""
     echo -e "${RED}${BOLD}WARNING: This action cannot be undone!${NC}"
     echo ""
-    echo "The following will be deleted:"
-    echo "  • $AVIDIA_HOME (including all SDK files and AVDs)"
-    echo "  • Avidia executable script"
-    echo "  • Avidia environment configuration"
-    echo ""
+    
+    show_installation_info
+    
     echo "All Android SDK components and virtual devices will be lost."
     echo ""
 
@@ -286,6 +377,7 @@ confirm_uninstallation() {
 
 # Main uninstallation process
 main() {
+    check_installation
     confirm_uninstallation
     show_backup_options
     stop_running_emulators
