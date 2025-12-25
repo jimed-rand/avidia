@@ -5,14 +5,41 @@ set -euo pipefail
 #               AVIDIA - Android Virtual Device Manager
 # ================================================
 
-# Path definitions
+# Path definitions - SYSTEM WIDE (Read-only, tidak bisa diubah user)
 readonly AVIDIA_JAR_DIR="/usr/share/java/avidia"
 readonly AVIDIA_JAR="$AVIDIA_JAR_DIR/avidia.jar"
 readonly LANTERNA_JAR="$AVIDIA_JAR_DIR/lanterna.jar"
 readonly JAVA_CMD="/usr/bin/java"
-readonly ANDROID_HOME="/usr/share/android"
+readonly ANDROID_HOME="/usr/share/android"  # Hanya CLI tools saja
 readonly CONFIG_FILE="/etc/avidia.conf"
-readonly CLI_TOOLS_URL="https://dl.google.com/android/repository/commandlinetools-linux-*.zip"
+
+# PER-USER SDK DATA (Bisa diakses dan diubah user)
+get_user_sdk_root() {
+    local user="${SUDO_USER:-$USER}"
+    local home_dir
+    if [[ "$user" == "root" ]]; then
+        home_dir="/root"
+    else
+        home_dir="/home/$user"
+    fi
+    echo "$home_dir/.local/share/avidia/sdk"
+}
+
+# Helper untuk mendapatkan user sebenarnya
+get_actual_user() {
+    echo "${SUDO_USER:-$USER}"
+}
+
+# Helper untuk mendapatkan home directory user
+get_user_home() {
+    local user="$(get_actual_user)"
+    if [[ "$user" == "root" ]]; then
+        echo "/root"
+    else
+        echo "/home/$user"
+    fi
+}
+
 SDK_PERMISSION_FIXED=false
 
 print_header() {
@@ -78,10 +105,18 @@ verify_installation() {
         missing=true
     fi
     
-    if [[ ! -d "$ANDROID_HOME" ]]; then
-        print_error "Android SDK not found at: $ANDROID_HOME"
-        print_info "Run: sudo avidia initiate to set up the Android environment"
+    # Cek apakah CLI tools sudah di-install (system-wide)
+    if [[ ! -d "$ANDROID_HOME/cmdline-tools" ]]; then
+        print_error "Android CLI Tools not found at: $ANDROID_HOME/cmdline-tools"
+        print_info "Run: sudo avidia initiate to install CLI tools system-wide"
         missing=true
+    fi
+    
+    # Cek apakah user SDK data directory ada
+    local USER_SDK_ROOT="$(get_user_sdk_root)"
+    if [[ ! -d "$USER_SDK_ROOT" ]]; then
+        print_warning "User SDK data directory not found: $USER_SDK_ROOT"
+        print_info "Run: avidia repair to set up user SDK data"
     fi
     
     if $missing; then
@@ -90,11 +125,17 @@ verify_installation() {
 }
 
 setup_environment() {
-    export ANDROID_HOME="$ANDROID_HOME"
-    export ANDROID_SDK_ROOT="$ANDROID_HOME"
+    local USER_SDK_ROOT="$(get_user_sdk_root)"
+    
+    # Export environment variables
+    export ANDROID_HOME="$ANDROID_HOME"  # CLI tools location (system-wide)
+    export ANDROID_SDK_ROOT="$USER_SDK_ROOT"  # SDK data location (per-user)
     export PATH="$PATH:$ANDROID_HOME/cmdline-tools/latest/bin"
-    export PATH="$PATH:$ANDROID_HOME/platform-tools"
-    export PATH="$PATH:$ANDROID_HOME/emulator"
+    export PATH="$PATH:$USER_SDK_ROOT/platform-tools"
+    export PATH="$PATH:$USER_SDK_ROOT/emulator"
+    
+    # Create user SDK directory if it doesn't exist
+    mkdir -p "$USER_SDK_ROOT"
 }
 
 check_jdk() {
@@ -127,41 +168,85 @@ check_jdk() {
     fi
 }
 
-# Memperbaiki permission Android SDK
-fix_sdk_permissions() {
-    local USER="$1"
-    print_info "Fixing Android SDK permissions for user: $USER"
+# Fix permissions untuk CLI tools (system-wide)
+fix_cli_tools_permissions() {
+    print_info "Setting up Android CLI tools permissions..."
     
     # Buat grup android-sdk jika belum ada
     if ! getent group android-sdk > /dev/null 2>&1; then
         groupadd android-sdk 2>/dev/null || true
     fi
     
-    # Tambahkan user ke grup android-sdk
-    if ! id -nG "$USER" | grep -qw "android-sdk"; then
-        usermod -aG android-sdk "$USER" 2>/dev/null || true
+    # Tambahkan semua users ke grup android-sdk
+    local ACTUAL_USER="$(get_actual_user)"
+    if ! id -nG "$ACTUAL_USER" | grep -qw "android-sdk"; then
+        usermod -aG android-sdk "$ACTUAL_USER" 2>/dev/null || true
     fi
     
-    # Atur kepemilikan dan permission
-    chown -R "$USER:android-sdk" "$ANDROID_HOME" || true
-    find "$ANDROID_HOME" -type d -exec chmod 775 {} \;
-    find "$ANDROID_HOME" -type f -exec chmod 664 {} \;
+    # Atur kepemilikan dan permission untuk CLI tools (system-wide)
+    chown -R root:android-sdk "$ANDROID_HOME" || true
+    find "$ANDROID_HOME" -type d -exec chmod 755 {} \;
+    find "$ANDROID_HOME" -type f -exec chmod 644 {} \;
     
     # Buat direktori yang diperlukan
     mkdir -p "$ANDROID_HOME/.temp"
     mkdir -p "$ANDROID_HOME/licenses"
-    chown -R "$USER:android-sdk" "$ANDROID_HOME/.temp"
-    chown -R "$USER:android-sdk" "$ANDROID_HOME/licenses"
+    chown -R root:android-sdk "$ANDROID_HOME/.temp"
+    chown -R root:android-sdk "$ANDROID_HOME/licenses"
     chmod 777 "$ANDROID_HOME/.temp"
     
-    # Set permission untuk direktori bin
+    # Set permission untuk executable files
     if [[ -d "$ANDROID_HOME/cmdline-tools/latest/bin" ]]; then
         find "$ANDROID_HOME/cmdline-tools/latest/bin" -type f -name "*.sh" -exec chmod +x {} \;
         find "$ANDROID_HOME/cmdline-tools/latest/bin" -type f -name "*.pl" -exec chmod +x {} \;
+        find "$ANDROID_HOME/cmdline-tools/latest/bin" -type f -name "*.bat" -exec chmod +x {} \;
     fi
     
     SDK_PERMISSION_FIXED=true
-    print_success "Permissions fixed successfully"
+    print_success "CLI tools permissions configured"
+}
+
+# Setup user SDK directory
+setup_user_sdk() {
+    local ACTUAL_USER="$(get_actual_user)"
+    local USER_HOME="$(get_user_home)"
+    local USER_SDK_ROOT="$USER_HOME/.local/share/avidia/sdk"
+    
+    print_info "Setting up user SDK directory for: $ACTUAL_USER"
+    
+    # Create directory structure
+    mkdir -p "$USER_SDK_ROOT"
+    mkdir -p "$USER_SDK_ROOT/platform-tools"
+    mkdir -p "$USER_SDK_ROOT/emulator"
+    mkdir -p "$USER_SDK_ROOT/system-images"
+    mkdir -p "$USER_SDK_ROOT/platforms"
+    mkdir -p "$USER_SDK_ROOT/add-ons"
+    mkdir -p "$USER_SDK_ROOT/licenses"
+    mkdir -p "$USER_SDK_ROOT/avd"
+    mkdir -p "$USER_SDK_ROOT/.temp"
+    
+    # Set ownership to user
+    chown -R "$ACTUAL_USER:$ACTUAL_USER" "$USER_HOME/.local/share/avidia"
+    
+    # Set permissions
+    find "$USER_SDK_ROOT" -type d -exec chmod 755 {} \;
+    find "$USER_SDK_ROOT" -type f -exec chmod 644 {} \;
+    chmod 777 "$USER_SDK_ROOT/.temp"
+    
+    # Create environment file for user
+    cat > "$USER_HOME/.config/avidia/env.sh" << EOF
+# AVIDIA Environment Configuration
+export ANDROID_HOME="$ANDROID_HOME"
+export ANDROID_SDK_ROOT="$USER_SDK_ROOT"
+export PATH="\$PATH:$ANDROID_HOME/cmdline-tools/latest/bin"
+export PATH="\$PATH:$USER_SDK_ROOT/platform-tools"
+export PATH="\$PATH:$USER_SDK_ROOT/emulator"
+EOF
+    
+    chown "$ACTUAL_USER:$ACTUAL_USER" "$USER_HOME/.config/avidia/env.sh"
+    chmod 644 "$USER_HOME/.config/avidia/env.sh"
+    
+    print_success "User SDK directory created: $USER_SDK_ROOT"
 }
 
 suggest_kvm_installation() {
@@ -231,46 +316,55 @@ run_sdkmanager() {
     shift
     local ARGS="$*"
     
+    local USER_SDK_ROOT="$(get_user_sdk_root)"
+    
     # Jika permission belum difix, fix dulu
     if [[ "$SDK_PERMISSION_FIXED" == "false" ]]; then
-        fix_sdk_permissions "$USER"
+        fix_cli_tools_permissions
     fi
     
-    # Jalankan sdkmanager sebagai user
-    sudo -u "$USER" bash -c "export ANDROID_HOME='$ANDROID_HOME' && export ANDROID_SDK_ROOT='$ANDROID_HOME' && export PATH=\"\$PATH:$ANDROID_HOME/cmdline-tools/latest/bin\" && '$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager' --sdk_root='$ANDROID_HOME' $ARGS"
+    # Setup environment untuk user
+    setup_environment
+    
+    # Jalankan sdkmanager sebagai user dengan --sdk_root mengarah ke user directory
+    sudo -u "$USER" bash -c "
+        export ANDROID_HOME='$ANDROID_HOME'
+        export ANDROID_SDK_ROOT='$USER_SDK_ROOT'
+        export PATH=\"\$PATH:$ANDROID_HOME/cmdline-tools/latest/bin\"
+        '$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager' --sdk_root='$USER_SDK_ROOT' $ARGS
+    "
 }
 
-# Install paket dasar
+# Install paket dasar ke user directory
 install_basic_packages() {
-    local ACTUAL_USER="${SUDO_USER:-$USER}"
-    print_info "Installing basic Android tools..."
+    local ACTUAL_USER="$(get_actual_user)"
+    local USER_SDK_ROOT="$(get_user_sdk_root)"
     
-    # Install platform-tools dan emulator
-    run_sdkmanager "$ACTUAL_USER" "platform-tools" || true
-    run_sdkmanager "$ACTUAL_USER" "emulator" || true
+    print_info "Installing basic Android tools to user directory..."
     
-    print_success "Basic tools installed successfully!"
+    # Install platform-tools dan emulator ke user directory
+    run_sdkmanager "$ACTUAL_USER" "platform-tools" "emulator" || true
+    
+    print_success "Basic tools installed to: $USER_SDK_ROOT"
 }
 
 # Repair/update installation
 repair_installation() {
-    check_root
     print_header
-    echo "Repairing Android SDK installation..."
+    echo "Repairing/Updating AVIDIA installation..."
     echo ""
     
-    if [[ ! -d "$ANDROID_HOME" ]]; then
-        print_error "Android SDK not found at: $ANDROID_HOME"
-        echo "Run 'sudo avidia initiate' first"
-        exit 1
+    # Check root untuk memperbaiki CLI tools
+    if [[ $EUID -eq 0 ]]; then
+        print_info "Fixing system-wide CLI tools permissions..."
+        fix_cli_tools_permissions
     fi
     
-    local ACTUAL_USER="${SUDO_USER:-$USER}"
-    
-    # Fix permissions
-    fix_sdk_permissions "$ACTUAL_USER"
+    # Setup user SDK directory (tidak perlu root)
+    setup_user_sdk
     
     # Update semua paket yang ada
+    local ACTUAL_USER="$(get_actual_user)"
     print_info "Updating all installed packages..."
     run_sdkmanager "$ACTUAL_USER" "--update" || true
     
@@ -284,6 +378,10 @@ repair_installation() {
     echo ""
     print_success "REPAIR COMPLETE"
     echo ""
+    echo "SDK Structure:"
+    echo "  CLI Tools (system-wide): $ANDROID_HOME"
+    echo "  SDK Data (per-user): $(get_user_sdk_root)"
+    echo ""
     suggest_kvm_installation
 }
 
@@ -292,14 +390,21 @@ list_avds() {
     verify_installation
     setup_environment
     
-    local ACTUAL_USER="${SUDO_USER:-$USER}"
+    local ACTUAL_USER="$(get_actual_user)"
+    local USER_SDK_ROOT="$(get_user_sdk_root)"
     
     print_header
     echo "Available Android Virtual Devices:"
     echo "----------------------------------"
     
     # Jalankan sebagai user yang tepat
-    if ! sudo -u "$ACTUAL_USER" "$ANDROID_HOME/emulator/emulator" -list-avds >/dev/null 2>&1; then
+    if [[ ! -f "$USER_SDK_ROOT/emulator/emulator" ]]; then
+        print_warning "Emulator not found in user directory."
+        echo "Install with: avidia repair"
+        return 1
+    fi
+    
+    if ! sudo -u "$ACTUAL_USER" "$USER_SDK_ROOT/emulator/emulator" -list-avds >/dev/null 2>&1; then
         print_warning "No AVDs found or emulator not properly configured."
         echo "Create a new AVD with: avidia create <avd-name>"
         return 1
@@ -308,7 +413,11 @@ list_avds() {
     echo ""
     echo "Detailed AVD information:"
     echo "-------------------------"
-    sudo -u "$ACTUAL_USER" bash -c "export ANDROID_HOME='$ANDROID_HOME' && '$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager' list avd"
+    sudo -u "$ACTUAL_USER" bash -c "
+        export ANDROID_HOME='$ANDROID_HOME'
+        export ANDROID_SDK_ROOT='$USER_SDK_ROOT'
+        '$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager' list avd
+    "
 }
 
 # Create AVD
@@ -358,6 +467,9 @@ create_avd() {
         shift
     done
     
+    local USER_SDK_ROOT="$(get_user_sdk_root)"
+    local ACTUAL_USER="$(get_actual_user)"
+    
     # Jika package tidak diberikan, minta user memilih
     if [[ -z "$PACKAGE" ]]; then
         print_header
@@ -366,8 +478,11 @@ create_avd() {
         echo ""
         echo "Available system images (installed):"
         
-        local ACTUAL_USER="${SUDO_USER:-$USER}"
-        sudo -u "$ACTUAL_USER" bash -c "export ANDROID_HOME='$ANDROID_HOME' && '$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager' --list_installed --sdk_root='$ANDROID_HOME' 2>/dev/null | grep 'system-images;'"
+        sudo -u "$ACTUAL_USER" bash -c "
+            export ANDROID_HOME='$ANDROID_HOME'
+            export ANDROID_SDK_ROOT='$USER_SDK_ROOT'
+            '$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager' --list_installed --sdk_root='$USER_SDK_ROOT' 2>/dev/null | grep 'system-images;'
+        " || true
         echo ""
         echo "For more options, install additional system images with:"
         echo "  avidia install-sdk"
@@ -385,14 +500,16 @@ create_avd() {
     echo "Creating AVD: $AVD_NAME"
     echo "Device: $DEVICE"
     echo "Package: $PACKAGE"
+    echo "Location: $USER_SDK_ROOT/avd/"
     echo ""
     echo "This may take a few moments..."
     
-    # Create AVD
-    local ACTUAL_USER="${SUDO_USER:-$USER}"
-    
     # Check if system image is installed
-    if ! sudo -u "$ACTUAL_USER" bash -c "export ANDROID_HOME='$ANDROID_HOME' && '$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager' --list_installed --sdk_root='$ANDROID_HOME' 2>/dev/null | grep -q '$PACKAGE'"; then
+    if ! sudo -u "$ACTUAL_USER" bash -c "
+        export ANDROID_HOME='$ANDROID_HOME'
+        export ANDROID_SDK_ROOT='$USER_SDK_ROOT'
+        '$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager' --list_installed --sdk_root='$USER_SDK_ROOT' 2>/dev/null | grep -q '$PACKAGE'
+    "; then
         print_warning "System image '$PACKAGE' is not installed."
         read -p "Would you like to install it now? (y/n): " confirm
         if [[ "$confirm" =~ ^[Yy]$ ]]; then
@@ -404,7 +521,11 @@ create_avd() {
     fi
     
     # Create AVD
-    if sudo -u "$ACTUAL_USER" bash -c "export ANDROID_HOME='$ANDROID_HOME' && echo 'no' | '$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager' create avd -n '$AVD_NAME' -k '$PACKAGE' -d '$DEVICE'"; then
+    if sudo -u "$ACTUAL_USER" bash -c "
+        export ANDROID_HOME='$ANDROID_HOME'
+        export ANDROID_SDK_ROOT='$USER_SDK_ROOT'
+        echo 'no' | '$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager' create avd -n '$AVD_NAME' -k '$PACKAGE' -d '$DEVICE'
+    "; then
         print_success "AVD '$AVD_NAME' created successfully!"
         echo ""
         echo "Start your AVD with:"
@@ -434,10 +555,18 @@ start_avd() {
     fi
     
     local AVD_NAME="$1"
-    local ACTUAL_USER="${SUDO_USER:-$USER}"
+    local USER_SDK_ROOT="$(get_user_sdk_root)"
+    local ACTUAL_USER="$(get_actual_user)"
+    
+    # Cek apakah emulator ada di user directory
+    if [[ ! -f "$USER_SDK_ROOT/emulator/emulator" ]]; then
+        print_error "Emulator not found in user SDK directory!"
+        echo "Install emulator with: avidia repair"
+        exit 1
+    fi
     
     # Cek apakah AVD ada
-    if ! sudo -u "$ACTUAL_USER" "$ANDROID_HOME/emulator/emulator" -list-avds | grep -q "^$AVD_NAME$"; then
+    if ! sudo -u "$ACTUAL_USER" "$USER_SDK_ROOT/emulator/emulator" -list-avds | grep -q "^$AVD_NAME$"; then
         print_error "AVD '$AVD_NAME' not found!"
         echo ""
         echo "Available AVDs:"
@@ -459,6 +588,7 @@ start_avd() {
     
     print_header
     echo "Starting AVD: $AVD_NAME"
+    echo "Emulator: $USER_SDK_ROOT/emulator/emulator"
     echo ""
     echo "Controls:"
     echo "  Press Ctrl+C to stop the emulator"
@@ -472,7 +602,7 @@ start_avd() {
     read -p "Press Enter to start the emulator..."
     
     # Start emulator dengan opsi performa
-    sudo -u "$ACTUAL_USER" "$ANDROID_HOME/emulator/emulator" \
+    sudo -u "$ACTUAL_USER" "$USER_SDK_ROOT/emulator/emulator" \
         -avd "$AVD_NAME" \
         -gpu "$GPU_MODE" \
         -memory 4096 \
@@ -494,10 +624,11 @@ start_avd_background() {
     fi
     
     local AVD_NAME="$1"
-    local ACTUAL_USER="${SUDO_USER:-$USER}"
+    local USER_SDK_ROOT="$(get_user_sdk_root)"
+    local ACTUAL_USER="$(get_actual_user)"
     
     # Cek apakah AVD ada
-    if ! sudo -u "$ACTUAL_USER" "$ANDROID_HOME/emulator/emulator" -list-avds | grep -q "^$AVD_NAME$"; then
+    if ! sudo -u "$ACTUAL_USER" "$USER_SDK_ROOT/emulator/emulator" -list-avds | grep -q "^$AVD_NAME$"; then
         print_error "AVD '$AVD_NAME' not found!"
         exit 1
     fi
@@ -513,7 +644,11 @@ start_avd_background() {
     print_info "Starting AVD '$AVD_NAME' in background..."
     print_info "Logs will be written to: $LOG_FILE"
     
-    sudo -u "$ACTUAL_USER" bash -c "nohup '$ANDROID_HOME/emulator/emulator' -avd '$AVD_NAME' -no-snapshot-load > '$LOG_FILE' 2>&1 &"
+    sudo -u "$ACTUAL_USER" bash -c "
+        export ANDROID_HOME='$ANDROID_HOME'
+        export ANDROID_SDK_ROOT='$USER_SDK_ROOT'
+        nohup '$USER_SDK_ROOT/emulator/emulator' -avd '$AVD_NAME' -no-snapshot-load > '$LOG_FILE' 2>&1 &
+    "
     
     # Beri waktu untuk startup
     sleep 3
@@ -538,7 +673,7 @@ stop_avd() {
     fi
     
     local AVD_NAME="$1"
-    local ACTUAL_USER="${SUDO_USER:-$USER}"
+    local ACTUAL_USER="$(get_actual_user)"
     
     print_info "Stopping AVD: $AVD_NAME"
     
@@ -616,10 +751,11 @@ delete_avd() {
     fi
     
     local AVD_NAME="$1"
-    local ACTUAL_USER="${SUDO_USER:-$USER}"
+    local USER_SDK_ROOT="$(get_user_sdk_root)"
+    local ACTUAL_USER="$(get_actual_user)"
     
     # Cek apakah AVD ada
-    if ! sudo -u "$ACTUAL_USER" "$ANDROID_HOME/emulator/emulator" -list-avds | grep -q "^$AVD_NAME$"; then
+    if ! sudo -u "$ACTUAL_USER" "$USER_SDK_ROOT/emulator/emulator" -list-avds | grep -q "^$AVD_NAME$"; then
         print_error "AVD '$AVD_NAME' not found!"
         echo ""
         echo "Available AVDs:"
@@ -650,10 +786,14 @@ delete_avd() {
     read -p "Are you sure you want to delete this AVD? (yes/no): " CONFIRM
     
     if [[ "$CONFIRM" == "yes" ]] || [[ "$CONFIRM" == "y" ]]; then
-        if sudo -u "$ACTUAL_USER" bash -c "export ANDROID_HOME='$ANDROID_HOME' && echo 'yes' | '$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager' delete avd -n '$AVD_NAME'"; then
+        if sudo -u "$ACTUAL_USER" bash -c "
+            export ANDROID_HOME='$ANDROID_HOME'
+            export ANDROID_SDK_ROOT='$USER_SDK_ROOT'
+            echo 'yes' | '$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager' delete avd -n '$AVD_NAME'
+        "; then
             print_success "AVD '$AVD_NAME' deleted successfully."
             echo ""
-            echo "Disk space recovered: $(du -sh \"$ANDROID_HOME/avd/$AVD_NAME.avd\" 2>/dev/null | cut -f1 || echo 'unknown')"
+            echo "Disk space recovered: $(du -sh \"$USER_SDK_ROOT/avd/$AVD_NAME.avd\" 2>/dev/null | cut -f1 || echo 'unknown')"
         else
             print_error "Failed to delete AVD '$AVD_NAME'"
             exit 1
@@ -688,7 +828,8 @@ install_sdk() {
     fi
     
     local PACKAGE="$1"
-    local ACTUAL_USER="${SUDO_USER:-$USER}"
+    local USER_SDK_ROOT="$(get_user_sdk_root)"
+    local ACTUAL_USER="$(get_actual_user)"
     
     if [[ -z "$PACKAGE" ]]; then
         # Jika tidak ada package yang diberikan, tampilkan daftar yang tersedia
@@ -697,10 +838,18 @@ install_sdk() {
         echo "======================="
         echo ""
         echo "Installed images:"
-        sudo -u "$ACTUAL_USER" bash -c "export ANDROID_HOME='$ANDROID_HOME' && '$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager' --list_installed --sdk_root='$ANDROID_HOME' 2>/dev/null | grep 'system-images;'"
+        sudo -u "$ACTUAL_USER" bash -c "
+            export ANDROID_HOME='$ANDROID_HOME'
+            export ANDROID_SDK_ROOT='$USER_SDK_ROOT'
+            '$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager' --list_installed --sdk_root='$USER_SDK_ROOT' 2>/dev/null | grep 'system-images;'
+        " || true
         echo ""
         echo "Available images to install (first 30):"
-        sudo -u "$ACTUAL_USER" bash -c "export ANDROID_HOME='$ANDROID_HOME' && '$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager' --list --sdk_root='$ANDROID_HOME' 2>/dev/null | grep 'system-images;' | head -30"
+        sudo -u "$ACTUAL_USER" bash -c "
+            export ANDROID_HOME='$ANDROID_HOME'
+            export ANDROID_SDK_ROOT='$USER_SDK_ROOT'
+            '$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager' --list --sdk_root='$USER_SDK_ROOT' 2>/dev/null | grep 'system-images;' | head -30
+        " || true
         echo ""
         echo "Example package format:"
         echo "  system-images;android-34;google_apis;x86_64"
@@ -719,6 +868,7 @@ install_sdk() {
     echo "================================"
     echo ""
     echo "Package: $PACKAGE"
+    echo "Location: $USER_SDK_ROOT/system-images/"
     echo ""
     echo "This may take a while depending on your internet connection..."
     echo "Estimated download size: 1-2 GB"
@@ -732,11 +882,12 @@ install_sdk() {
     
     echo ""
     
-    # Fix permissions terlebih dahulu
-    fix_sdk_permissions "$ACTUAL_USER"
-    
     # Cek jika package sudah terinstall
-    if sudo -u "$ACTUAL_USER" bash -c "export ANDROID_HOME='$ANDROID_HOME' && '$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager' --list_installed --sdk_root='$ANDROID_HOME' 2>/dev/null | grep -q '$PACKAGE'"; then
+    if sudo -u "$ACTUAL_USER" bash -c "
+        export ANDROID_HOME='$ANDROID_HOME'
+        export ANDROID_SDK_ROOT='$USER_SDK_ROOT'
+        '$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager' --list_installed --sdk_root='$USER_SDK_ROOT' 2>/dev/null | grep -q '$PACKAGE'
+    "; then
         print_warning "System image '$PACKAGE' is already installed!"
         echo "You can create an AVD using this image with:"
         echo "  avidia create <name> --package='$PACKAGE'"
@@ -746,16 +897,16 @@ install_sdk() {
     # Jalankan sdkmanager dengan environment yang benar
     if sudo -u "$ACTUAL_USER" bash -c "
         export ANDROID_HOME='$ANDROID_HOME'
-        export ANDROID_SDK_ROOT='$ANDROID_HOME'
+        export ANDROID_SDK_ROOT='$USER_SDK_ROOT'
         export PATH=\"\$PATH:$ANDROID_HOME/cmdline-tools/latest/bin\"
-        mkdir -p '$ANDROID_HOME/.temp'
-        mkdir -p '$ANDROID_HOME/licenses'
+        mkdir -p '$USER_SDK_ROOT/.temp'
+        mkdir -p '$USER_SDK_ROOT/licenses'
         
         # Auto-accept licenses
-        yes | '$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager' --sdk_root='$ANDROID_HOME' '$PACKAGE'
+        yes | '$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager' --sdk_root='$USER_SDK_ROOT' '$PACKAGE'
     "; then
         echo ""
-        print_success "System image installed successfully!"
+        print_success "System image installed successfully to: $USER_SDK_ROOT/system-images/"
         echo ""
         echo "You can now create an AVD with:"
         echo "  avidia create <name> --package='$PACKAGE'"
@@ -769,7 +920,8 @@ install_sdk() {
 list_devices() {
     verify_installation
     setup_environment
-    local ACTUAL_USER="${SUDO_USER:-$USER}"
+    local USER_SDK_ROOT="$(get_user_sdk_root)"
+    local ACTUAL_USER="$(get_actual_user)"
     
     print_header
     echo "Available Device Definitions"
@@ -778,7 +930,7 @@ list_devices() {
     
     sudo -u "$ACTUAL_USER" bash -c "
         export ANDROID_HOME='$ANDROID_HOME'
-        export ANDROID_SDK_ROOT='$ANDROID_HOME'
+        export ANDROID_SDK_ROOT='$USER_SDK_ROOT'
         '$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager' list device
     "
 }
@@ -787,7 +939,8 @@ list_devices() {
 list_images() {
     verify_installation
     setup_environment
-    local ACTUAL_USER="${SUDO_USER:-$USER}"
+    local USER_SDK_ROOT="$(get_user_sdk_root)"
+    local ACTUAL_USER="$(get_actual_user)"
     
     print_header
     echo "Available System Images"
@@ -797,8 +950,8 @@ list_images() {
     echo "-----------------"
     sudo -u "$ACTUAL_USER" bash -c "
         export ANDROID_HOME='$ANDROID_HOME'
-        export ANDROID_SDK_ROOT='$ANDROID_HOME'
-        '$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager' --list_installed --sdk_root='$ANDROID_HOME' 2>/dev/null | grep 'system-images;'
+        export ANDROID_SDK_ROOT='$USER_SDK_ROOT'
+        '$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager' --list_installed --sdk_root='$USER_SDK_ROOT' 2>/dev/null | grep 'system-images;'
     " || true
     
     echo ""
@@ -806,8 +959,8 @@ list_images() {
     echo "---------------------------"
     sudo -u "$ACTUAL_USER" bash -c "
         export ANDROID_HOME='$ANDROID_HOME'
-        export ANDROID_SDK_ROOT='$ANDROID_HOME'
-        '$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager' --list --sdk_root='$ANDROID_HOME' 2>/dev/null | grep 'system-images;' | head -30
+        export ANDROID_SDK_ROOT='$USER_SDK_ROOT'
+        '$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager' --list --sdk_root='$USER_SDK_ROOT' 2>/dev/null | grep 'system-images;' | head -30
     " || true
     
     echo ""
@@ -822,13 +975,16 @@ system_info() {
     verify_installation
     setup_environment
     
+    local USER_SDK_ROOT="$(get_user_sdk_root)"
+    
     print_header
     echo "System Information"
     echo "=================="
     echo ""
     
-    echo "AVIDIA Status:    Operational"
-    echo "Android SDK Path: $ANDROID_HOME"
+    echo "AVIDIA Status:           Operational"
+    echo "CLI Tools (system):      $ANDROID_HOME"
+    echo "SDK Data (user):         $USER_SDK_ROOT"
     echo ""
     
     # Java info
@@ -840,26 +996,37 @@ system_info() {
     # SDK installation status
     echo "SDK Components:"
     echo "---------------"
-    local ACTUAL_USER="${SUDO_USER:-$USER}"
+    local ACTUAL_USER="$(get_actual_user)"
     
     # Check platform-tools
-    if [[ -x "$ANDROID_HOME/platform-tools/adb" ]]; then
-        echo "  [✓] Platform Tools: $(adb version 2>/dev/null | head -1)"
-        echo "      Path: $ANDROID_HOME/platform-tools/adb"
+    if [[ -x "$USER_SDK_ROOT/platform-tools/adb" ]]; then
+        echo "  [✓] Platform Tools: $(sudo -u "$ACTUAL_USER" adb version 2>/dev/null | head -1)"
+        echo "      Path: $USER_SDK_ROOT/platform-tools/adb"
     else
-        echo "  [✗] Platform Tools: Not installed or not found"
-        echo "      Install with: sudo avidia repair"
+        echo "  [✗] Platform Tools: Not installed in user directory"
+        echo "      Install with: avidia repair"
     fi
     
     # Check emulator
-    if [[ -x "$ANDROID_HOME/emulator/emulator" ]]; then
-        echo "  [✓] Emulator: $(emulator -version 2>/dev/null | head -1)"
-        echo "      Path: $ANDROID_HOME/emulator/emulator"
+    if [[ -x "$USER_SDK_ROOT/emulator/emulator" ]]; then
+        echo "  [✓] Emulator: $(sudo -u "$ACTUAL_USER" emulator -version 2>/dev/null | head -1)"
+        echo "      Path: $USER_SDK_ROOT/emulator/emulator"
     else
-        echo "  [✗] Emulator: Not installed or not found"
-        echo "      Install with: sudo avidia repair"
+        echo "  [✗] Emulator: Not installed in user directory"
+        echo "      Install with: avidia repair"
     fi
     
+    echo ""
+    
+    # Disk usage
+    echo "Disk Usage:"
+    echo "-----------"
+    if [[ -d "$USER_SDK_ROOT" ]]; then
+        echo "  User SDK Data: $(du -sh "$USER_SDK_ROOT" 2>/dev/null | cut -f1)"
+    fi
+    if [[ -d "$ANDROID_HOME" ]]; then
+        echo "  CLI Tools: $(du -sh "$ANDROID_HOME" 2>/dev/null | cut -f1)"
+    fi
     echo ""
     
     # KVM status
@@ -888,10 +1055,10 @@ system_info() {
     # AVD list
     echo "Virtual Devices:"
     echo "----------------"
-    if sudo -u "$ACTUAL_USER" "$ANDROID_HOME/emulator/emulator" -list-avds >/dev/null 2>&1; then
-        local AVD_COUNT=$(sudo -u "$ACTUAL_USER" "$ANDROID_HOME/emulator/emulator" -list-avds | wc -l)
+    if [[ -f "$USER_SDK_ROOT/emulator/emulator" ]] && sudo -u "$ACTUAL_USER" "$USER_SDK_ROOT/emulator/emulator" -list-avds >/dev/null 2>&1; then
+        local AVD_COUNT=$(sudo -u "$ACTUAL_USER" "$USER_SDK_ROOT/emulator/emulator" -list-avds | wc -l)
         echo "  Total AVDs: $AVD_COUNT"
-        sudo -u "$ACTUAL_USER" "$ANDROID_HOME/emulator/emulator" -list-avds | sed 's/^/    /'
+        sudo -u "$ACTUAL_USER" "$USER_SDK_ROOT/emulator/emulator" -list-avds | sed 's/^/    /'
     else
         echo "  No AVDs created yet"
         echo "  Create one with: avidia create <name>"
@@ -916,7 +1083,7 @@ check_kvm() {
         return 1
     fi
     
-    local ACTUAL_USER="${SUDO_USER:-$USER}"
+    local ACTUAL_USER="$(get_actual_user)"
     echo ""
     
     # Check permission
@@ -964,25 +1131,26 @@ check_kvm() {
     echo "Or run an AVD with hardware acceleration enabled"
 }
 
-# Initiate SDK
+# Initiate SDK (hanya CLI tools system-wide)
 initiate_sdk() {
     check_root
     check_jdk
     
     print_header
-    echo "Android SDK Initialization"
-    echo "=========================="
+    echo "Android SDK CLI Tools Initialization"
+    echo "===================================="
     echo ""
-    echo "This will install the Android SDK system-wide at:"
+    echo "This will install Android CLI tools system-wide at:"
     echo "  $ANDROID_HOME"
     echo ""
-    echo "Components to be installed:"
-    echo "  - Command-line tools"
-    echo "  - Platform-tools (adb, fastboot)"
-    echo "  - Emulator"
+    echo "SDK data (system images, AVDs, etc.) will be stored in:"
+    echo "  ~/.local/share/avidia/sdk (per-user directory)"
+    echo ""
+    echo "Components to be installed (system-wide):"
+    echo "  - Command-line tools only"
     echo ""
     echo "Requirements:"
-    echo "  - ~5GB free disk space"
+    echo "  - ~500MB free disk space for CLI tools"
     echo "  - JDK (already verified)"
     echo ""
     read -p "Proceed with installation? (y/n): " confirm
@@ -998,35 +1166,25 @@ initiate_sdk() {
     print_info "Step 1: Creating directory structure"
     mkdir -p "$ANDROID_HOME"
     mkdir -p "$ANDROID_HOME/.temp"
-    mkdir -p "$ANDROID_HOME/licenses"
-    chmod 775 "$ANDROID_HOME"
+    chmod 755 "$ANDROID_HOME"
     chmod 777 "$ANDROID_HOME/.temp"
     
-    # Create cache directory for current user
-    local ACTUAL_USER="${SUDO_USER:-$USER}"
-    local ACTUAL_HOME=$(eval echo ~"$ACTUAL_USER" 2>/dev/null || echo "/home/$ACTUAL_USER")
-    local USER_CACHE_DIR="$ACTUAL_HOME/.local/share/avidia/cache"
-    mkdir -p "$USER_CACHE_DIR"
-    
-    # Fix ownership
-    chown -R "$ACTUAL_USER:$ACTUAL_USER" "$ACTUAL_HOME/.local/share/avidia" 2>/dev/null || true
-    
-    # Step 2: Setup environment
+    # Step 2: Setup environment variables untuk system-wide
     print_info "Step 2: Setting up environment variables"
-    cat > /etc/profile.d/android-sdk.sh << 'EOF'
-# Android SDK Configuration
-export ANDROID_HOME="/usr/share/android"
-export ANDROID_SDK_ROOT="/usr/share/android"
-export PATH="$PATH:$ANDROID_HOME/cmdline-tools/latest/bin"
-export PATH="$PATH:$ANDROID_HOME/platform-tools"
-export PATH="$PATH:$ANDROID_HOME/emulator"
+    
+    # Buat system-wide environment file (hanya untuk CLI tools)
+    cat > /etc/profile.d/android-cli-tools.sh << 'EOF'
+# Android CLI Tools Configuration (System-wide)
+# SDK data is stored per-user in ~/.local/share/avidia/sdk
+export ANDROID_CLI_HOME="/usr/share/android"
+export PATH="$PATH:$ANDROID_CLI_HOME/cmdline-tools/latest/bin"
 EOF
     
-    chmod 644 /etc/profile.d/android-sdk.sh
+    chmod 644 /etc/profile.d/android-cli-tools.sh
     
     # Apply environment for current session
-    source /etc/profile.d/android-sdk.sh
-    print_success "Environment variables configured"
+    source /etc/profile.d/android-cli-tools.sh
+    print_success "CLI tools environment configured"
     
     # Step 3: Download latest CLI Tools
     print_info "Step 3: Downloading Android CLI Tools"
@@ -1049,44 +1207,32 @@ EOF
     
     local download_url="https://dl.google.com/android/repository/$tools_url"
     
-    # Check if cached
-    if [[ -f "$USER_CACHE_DIR/$tools_url" ]]; then
-        print_info "Using cached CLI Tools from $USER_CACHE_DIR"
-        cp "$USER_CACHE_DIR/$tools_url" .
-    else
-        print_info "Downloading Android CLI Tools from $download_url"
-        echo "This may take a few minutes depending on your internet connection..."
-        
-        if command -v wget &> /dev/null; then
-            wget -q --show-progress -c "$download_url" || {
-                print_error "Failed to download with wget"
-                exit 1
-            }
-        elif command -v curl &> /dev/null; then
-            curl -# -O "$download_url" || {
-                print_error "Failed to download with curl"
-                exit 1
-            }
-        else
-            print_error "Error: wget or curl required for download"
-            print_info "Please install wget or curl first:"
-            local pm=$(detect_package_manager)
-            case $pm in
-                apt) echo "  sudo apt install wget" ;;
-                dnf|yum) echo "  sudo dnf install wget" ;;
-                pacman) echo "  sudo pacman -S wget" ;;
-                zypper) echo "  sudo zypper install wget" ;;
-                apk) echo "  sudo apk add wget" ;;
-                *) echo "  Install wget or curl using your package manager" ;;
-            esac
+    print_info "Downloading Android CLI Tools from $download_url"
+    echo "This may take a few minutes depending on your internet connection..."
+    
+    if command -v wget &> /dev/null; then
+        wget -q --show-progress -c "$download_url" || {
+            print_error "Failed to download with wget"
             exit 1
-        fi
-        
-        # Cache the downloaded file
-        print_info "Caching CLI Tools for future use..."
-        mkdir -p "$USER_CACHE_DIR"
-        cp "$tools_url" "$USER_CACHE_DIR/"
-        chown "$ACTUAL_USER:$ACTUAL_USER" "$USER_CACHE_DIR/$tools_url" 2>/dev/null || true
+        }
+    elif command -v curl &> /dev/null; then
+        curl -# -O "$download_url" || {
+            print_error "Failed to download with curl"
+            exit 1
+        }
+    else
+        print_error "Error: wget or curl required for download"
+        print_info "Please install wget or curl first:"
+        local pm=$(detect_package_manager)
+        case $pm in
+            apt) echo "  sudo apt install wget" ;;
+            dnf|yum) echo "  sudo dnf install wget" ;;
+            pacman) echo "  sudo pacman -S wget" ;;
+            zypper) echo "  sudo zypper install wget" ;;
+            apk) echo "  sudo apk add wget" ;;
+            *) echo "  Install wget or curl using your package manager" ;;
+        esac
+        exit 1
     fi
     
     # Step 4: Extract tools
@@ -1102,31 +1248,24 @@ EOF
     # Make scripts executable
     find "$ANDROID_HOME/cmdline-tools" -name "*.sh" -exec chmod +x {} \;
     find "$ANDROID_HOME/cmdline-tools" -name "*.pl" -exec chmod +x {} \;
+    find "$ANDROID_HOME/cmdline-tools" -name "*.bat" -exec chmod +x {} \;
     
-    # Step 5: Fix permissions
-    print_info "Step 5: Setting permissions"
-    fix_sdk_permissions "$ACTUAL_USER"
-    
-    # Setup environment untuk tools
-    setup_environment
-    
-    # Step 6: Install basic packages
-    print_info "Step 6: Installing basic tools (platform-tools and emulator)"
-    install_basic_packages
-    
-    # Step 7: Accept licenses
-    print_info "Step 7: Accepting licenses"
-    echo "y" | run_sdkmanager "$ACTUAL_USER" "--licenses" >/dev/null 2>&1 || true
+    # Step 5: Fix permissions untuk CLI tools
+    print_info "Step 5: Setting permissions for CLI tools"
+    fix_cli_tools_permissions
     
     echo ""
-    print_success "Android SDK initialization completed successfully!"
+    print_success "Android CLI tools installation completed successfully!"
     echo ""
-    echo "Next steps:"
-    echo "  1. Install a system image: avidia install-sdk"
-    echo "  2. Create an AVD: avidia create MyDevice"
-    echo "  3. Start the AVD: avidia start MyDevice"
+    echo "Next steps (as regular user, NOT as root):"
+    echo "  1. Setup user SDK directory: avidia repair"
+    echo "  2. Install a system image: avidia install-sdk"
+    echo "  3. Create an AVD: avidia create MyDevice"
+    echo "  4. Start the AVD: avidia start MyDevice"
     echo ""
-    suggest_kvm_installation
+    echo "IMPORTANT: Now run as regular user (without sudo):"
+    echo "  avidia repair"
+    echo ""
 }
 
 # Display help
@@ -1135,11 +1274,15 @@ show_help() {
     echo "AVIDIA - Android Virtual Device Manager"
     echo "======================================="
     echo ""
+    echo "Architecture:"
+    echo "  - CLI Tools: /usr/share/android (system-wide, read-only)"
+    echo "  - SDK Data: ~/.local/share/avidia/sdk (per-user, writable)"
+    echo ""
     echo "Usage: avidia [command] [options]"
     echo ""
     echo "Commands:"
-    echo "  initiate          Initialize Android SDK system-wide"
-    echo "  repair            Repair/Update Android SDK installation"
+    echo "  initiate          Initialize Android CLI tools system-wide (requires root)"
+    echo "  repair            Setup user SDK directory and install basic tools"
     echo "  create <name>     Create a new Android Virtual Device"
     echo "  start <name>      Start an Android Virtual Device"
     echo "  start-bg <name>   Start an AVD in the background"
@@ -1156,10 +1299,11 @@ show_help() {
     echo "  help              Show this help message"
     echo ""
     echo "Examples:"
-    echo "  sudo avidia initiate"
-    echo "  avidia install-sdk"
-    echo "  avidia create MyDevice"
-    echo "  avidia start MyDevice"
+    echo "  sudo avidia initiate          # First time, install CLI tools"
+    echo "  avidia repair                 # Setup user environment"
+    echo "  avidia install-sdk            # Install system images"
+    echo "  avidia create MyDevice        # Create AVD"
+    echo "  avidia start MyDevice         # Start AVD"
     echo ""
     echo "For beginners, start with the Text User Interface:"
     echo "  avidia tui"
@@ -1178,7 +1322,7 @@ launch_tui() {
     setup_environment
     
     # Jalankan Java TUI
-    local ACTUAL_USER="${SUDO_USER:-$USER}"
+    local ACTUAL_USER="$(get_actual_user)"
     
     echo ""
     echo "Launching AVIDIA Text User Interface..."
