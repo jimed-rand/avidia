@@ -14,65 +14,24 @@ public class avidia {
     private static final String CYAN = "\033[0;36m";
     private static final String BOLD = "\033[1m";
     private static String sdkPath;
+    private static String userName;
 
     // Android versions and their API levels
     private static final Map<String, String> ANDROID_VERSIONS = new LinkedHashMap<String, String>() {{
-        put("1.0", "1"); put("1.1", "2"); put("1.5", "3"); put("1.6", "4");
-        put("2.0", "5"); put("2.0.1", "6"); put("2.1", "7"); put("2.2", "8");
-        put("2.3", "9"); put("2.3.3", "10"); put("3.0", "11"); put("3.1", "12");
-        put("3.2", "13"); put("4.0", "14"); put("4.0.3", "15"); put("4.1", "16");
-        put("4.2", "17"); put("4.3", "18"); put("4.4", "19"); put("4.4W", "20");
-        put("5.0", "21"); put("5.1", "22"); put("6.0", "23"); put("7.0", "24");
-        put("7.1", "25"); put("8.0", "26"); put("8.1", "27"); put("9", "28");
-        put("10", "29"); put("11", "30"); put("12", "31"); put("12L", "32");
-        put("13", "33"); put("14", "34"); put("15", "35"); put("16", "36");
-    }};
-
-    // Device profiles
-    private static final Map<String, String> DEVICE_PROFILES = new LinkedHashMap<String, String>() {{
-        // Phones
-        put("Pixel 8 Pro", "pixel_8_pro");
-        put("Pixel 8", "pixel_8");
-        put("Pixel 7 Pro", "pixel_7_pro");
-        put("Pixel 7", "pixel_7");
-        put("Pixel 6 Pro", "pixel_6_pro");
-        put("Pixel 6", "pixel_6");
-        put("Pixel 5", "pixel_5");
-        put("Pixel 4 XL", "pixel_4_xl");
-        put("Pixel 4", "pixel_4");
-        put("Pixel 3 XL", "pixel_3_xl");
-        put("Pixel 3", "pixel_3");
-        put("Pixel 2 XL", "pixel_2_xl");
-        put("Pixel 2", "pixel_2");
-        put("Pixel XL", "pixel_xl");
-        put("Pixel", "pixel");
-
-        // Nexus devices
-        put("Nexus 6P", "Nexus_6P");
-        put("Nexus 6", "Nexus_6");
-        put("Nexus 5X", "Nexus_5X");
-        put("Nexus 5", "Nexus_5");
-        put("Nexus 4", "Nexus_4");
-
-        // Tablets
-        put("Nexus 10", "Nexus_10");
-        put("Nexus 9", "Nexus_9");
-        put("Nexus 7 (2013)", "Nexus_7_2013");
-        put("Nexus 7 (2012)", "Nexus_7");
-
-        // Wear OS
-        put("Wear OS Square", "wearos_square");
-        put("Wear OS Round", "wearos_round");
-
-        // Android TV
-        put("Android TV (1080p)", "tv_1080p");
-        put("Android TV (720p)", "tv_720p");
-
-        // Automotive
-        put("Android Automotive", "automotive_1024p_landscape");
-
-        // Custom device ID (user can enter their own)
-        put("Custom (enter device ID)", "custom");
+        put("16", "36");
+        put("15", "35");
+        put("14", "34");
+        put("13", "33");
+        put("12L", "32");
+        put("12", "31");
+        put("11", "30");
+        put("10", "29");
+        put("9", "28");
+        put("8.1", "27");
+        put("8.0", "26");
+        put("7.1", "25");
+        put("7.0", "24");
+        put("6.0", "23");
     }};
 
     public static void main(String[] args) {
@@ -87,6 +46,9 @@ public class avidia {
             System.exit(1);
         }
 
+        // Dapatkan username
+        userName = System.getProperty("user.name");
+
         switch (mode) {
             case "tui":
                 showTUI();
@@ -95,42 +57,32 @@ public class avidia {
                 listAVDs();
                 break;
             case "create":
-                if (args.length < 6) {
-                    System.err.println("Usage: create <name> <api> <abi> <device> <storage>");
+                if (args.length < 2) {
+                    System.err.println("Usage: create <name>");
                     System.exit(1);
                 }
-                createAVDProcess(args[1], args[2], args[3], args[4], args[5]);
+                createAVDTUI(args[1]);
                 break;
             case "start":
                 if (args.length < 2) {
                     System.err.println("Usage: start <name>");
                     System.exit(1);
                 }
-                startAVDByName(args[1]);
+                startAVD(args[1]);
                 break;
             case "delete":
                 if (args.length < 2) {
                     System.err.println("Usage: delete <name>");
                     System.exit(1);
                 }
-                deleteAVDByName(args[1]);
+                deleteAVD(args[1]);
                 break;
             case "install-sdk":
                 if (args.length < 2) {
                     System.err.println("Usage: install-sdk <package>");
                     System.exit(1);
                 }
-                installSDKPackageProcess(args[1]);
-                break;
-            case "info":
-                showSystemInfo();
-                break;
-            case "sdk-manager":
-                if (args.length < 2) {
-                    System.err.println("Usage: sdk-manager <command>");
-                    System.exit(1);
-                }
-                executeSDKManager(args[1]);
+                installSDKPackage(args[1]);
                 break;
             default:
                 System.err.println("Unknown operation: " + mode);
@@ -151,12 +103,6 @@ public class avidia {
         if (!sdkDir.exists()) {
             System.err.println(RED + "Android SDK directory not found: " + sdkPath + RESET);
             System.err.println("Run 'sudo avidia initiate' to initiate Android SDK system-wide.");
-            return false;
-        }
-
-        File sdkManager = new File(sdkPath + "/cmdline-tools/latest/bin/sdkmanager");
-        if (!sdkManager.exists()) {
-            System.err.println(RED + "Android SDK Manager not found. Please run 'sudo avidia initiate'" + RESET);
             return false;
         }
 
@@ -192,19 +138,10 @@ public class avidia {
             System.out.println(GREEN + " [4]" + RESET + " Remove Virtual Device");
             System.out.println("     Delete an Android Virtual Device permanently");
             System.out.println();
-            System.out.println(GREEN + " [5]" + RESET + " SDK Package Manager");
-            System.out.println("     Manage Android SDK packages and system images");
+            System.out.println(GREEN + " [5]" + RESET + " Install System Image");
+            System.out.println("     Install new Android system images for emulation");
             System.out.println();
-            System.out.println(GREEN + " [6]" + RESET + " Install Additional SDK");
-            System.out.println("     Add new Android SDK platforms and system images");
-            System.out.println();
-            System.out.println(GREEN + " [7]" + RESET + " List Device Definitions");
-            System.out.println("     Show available device definitions for AVD");
-            System.out.println();
-            System.out.println(GREEN + " [8]" + RESET + " List System Images");
-            System.out.println("     Show available system images (targets)");
-            System.out.println();
-            System.out.println(GREEN + " [9]" + RESET + " System Information");
+            System.out.println(GREEN + " [6]" + RESET + " System Information");
             System.out.println("     View system configuration and environment status");
             System.out.println();
             System.out.println(GREEN + " [0]" + RESET + " Exit to Shell");
@@ -228,20 +165,9 @@ public class avidia {
                     deleteAVDTUI(scanner);
                     break;
                 case "5":
-                    manageSDKTUI(scanner);
+                    installImageTUI(scanner);
                     break;
                 case "6":
-                    installAdditionalSDKTUI(scanner);
-                    break;
-                case "7":
-                    listDevices();
-                    waitForEnter(scanner);
-                    break;
-                case "8":
-                    listSystemImages();
-                    waitForEnter(scanner);
-                    break;
-                case "9":
                     showSystemInfo();
                     waitForEnter(scanner);
                     break;
@@ -250,7 +176,7 @@ public class avidia {
                     running = false;
                     break;
                 default:
-                    System.out.println(RED + "Invalid selection! Please choose 0-9." + RESET);
+                    System.out.println(RED + "Invalid selection! Please choose 0-6." + RESET);
                     waitForEnter(scanner);
             }
         }
@@ -286,7 +212,7 @@ public class avidia {
 
             if (count == 0) {
                 System.out.println(YELLOW + "  No virtual devices found." + RESET);
-                System.out.println("  Create one using option [2] or 'avidia create-avd'");
+                System.out.println("  Create one using option [2] or 'avidia create <name>'");
             }
 
             System.out.println(YELLOW + "================================================" + RESET);
@@ -296,75 +222,11 @@ public class avidia {
         }
     }
 
-    private static void listDevices() {
-        System.out.println(YELLOW + "\n================================================" + RESET);
-        System.out.println(BOLD + "           AVAILABLE DEVICE DEFINITIONS           " + RESET);
-        System.out.println(YELLOW + "================================================" + RESET);
-
-        try {
-            ProcessBuilder pb = new ProcessBuilder(
-                sdkPath + "/cmdline-tools/latest/bin/avdmanager", "list", "device"
-            );
-            Process process = pb.start();
-
-            BufferedReader reader = new BufferedReader(
-                new InputStreamReader(process.getInputStream())
-            );
-
-            String line;
-            while ((line = reader.readLine()) != null) {
-                System.out.println(line);
-            }
-
-            System.out.println(YELLOW + "================================================" + RESET);
-            process.waitFor();
-        } catch (Exception e) {
-            System.err.println(RED + "Failed to list device definitions: " + e.getMessage() + RESET);
-        }
-    }
-
-    private static void listSystemImages() {
-        System.out.println(YELLOW + "\n================================================" + RESET);
-        System.out.println(BOLD + "           AVAILABLE SYSTEM IMAGES           " + RESET);
-        System.out.println(YELLOW + "================================================" + RESET);
-
-        try {
-            ProcessBuilder pb = new ProcessBuilder(
-                sdkPath + "/cmdline-tools/latest/bin/sdkmanager", "--list"
-            );
-            Process process = pb.start();
-
-            BufferedReader reader = new BufferedReader(
-                new InputStreamReader(process.getInputStream())
-            );
-
-            String line;
-            boolean inSystemImagesSection = false;
-            while ((line = reader.readLine()) != null) {
-                if (line.contains("system-images;")) {
-                    inSystemImagesSection = true;
-                }
-                if (inSystemImagesSection) {
-                    System.out.println(line);
-                }
-                if (inSystemImagesSection && line.trim().isEmpty()) {
-                    break;
-                }
-            }
-
-            System.out.println(YELLOW + "================================================" + RESET);
-            process.waitFor();
-        } catch (Exception e) {
-            System.err.println(RED + "Failed to list system images: " + e.getMessage() + RESET);
-        }
-    }
-
     private static void createAVDTUI(Scanner scanner) {
         System.out.println(YELLOW + "\n================================================" + RESET);
         System.out.println(BOLD + "           CREATE VIRTUAL DEVICE              " + RESET);
         System.out.println(YELLOW + "================================================" + RESET);
 
-        // Device Name
         System.out.print("\nVirtual device name: ");
         String avdName = scanner.nextLine().trim();
 
@@ -373,76 +235,43 @@ public class avidia {
             return;
         }
 
-        // Android Version Selection
-        System.out.println("\n" + CYAN + "Android Version (API Level):" + RESET);
+        System.out.println("\n" + CYAN + "Android Version:" + RESET);
         System.out.println("------------------------------------------------");
-        int i = 1;
         for (Map.Entry<String, String> entry : ANDROID_VERSIONS.entrySet()) {
-            System.out.printf(" [%2d] Android %-6s (API %s)\n", i, entry.getKey(), entry.getValue());
-            i++;
+            System.out.printf("  Android %-5s (API %s)\n", entry.getKey(), entry.getValue());
         }
-        System.out.print("\nSelect version [34 for Android 14]: ");
-        String versionChoice = scanner.nextLine().trim();
+        System.out.print("\nEnter API level (e.g., 34 for Android 14): ");
+        String apiLevel = scanner.nextLine().trim();
 
-        String apiLevel = "34"; // Default to Android 14
-        if (!versionChoice.isEmpty()) {
-            try {
-                int choice = Integer.parseInt(versionChoice);
-                int idx = 1;
-                for (Map.Entry<String, String> entry : ANDROID_VERSIONS.entrySet()) {
-                    if (idx == choice) {
-                        apiLevel = entry.getValue();
-                        System.out.println(GREEN + "Selected: Android " + entry.getKey() + " (API " + apiLevel + ")" + RESET);
-                        break;
-                    }
-                    idx++;
-                }
-            } catch (NumberFormatException e) {
-                System.out.println(YELLOW + "Using default: Android 14 (API 34)" + RESET);
-            }
+        if (apiLevel.isEmpty()) {
+            apiLevel = "34";
         }
 
-        // System Image Type (GMS vs AOSP)
-        System.out.println("\n" + CYAN + "System Image Type:" + RESET);
-        System.out.println(" [1] GMS (Google Mobile Services) - Includes Google Play Store");
-        System.out.println(" [2] Google APIs - Android with Google APIs");
-        System.out.println(" [3] AOSP (Android Open Source Project) - Pure Android");
-        System.out.print("Select image type [1]: ");
-        String imageChoice = scanner.nextLine().trim();
-
-        String imageType = "google_apis_playstore"; // Default GMS
-        switch (imageChoice) {
-            case "2":
-                imageType = "google_apis";
-                break;
-            case "3":
-                imageType = "android";
-                break;
-        }
-
-        // Architecture
-        System.out.println("\n" + CYAN + "System Image Architecture:" + RESET);
-        System.out.println(" [1] x86_64 (Intel/AMD, faster with KVM)");
+        System.out.println("\n" + CYAN + "Architecture:" + RESET);
+        System.out.println(" [1] x86_64 (Intel/AMD 64-bit, recommended)");
         System.out.println(" [2] x86 (Intel/AMD 32-bit)");
-        System.out.println(" [3] arm64-v8a (ARM hosts)");
-        System.out.println(" [4] armeabi-v7a (ARM 32-bit)");
-        System.out.print("Architecture [1]: ");
-        String abiChoice = scanner.nextLine().trim();
-        String abi = "x86_64";
-        switch (abiChoice) {
-            case "2":
-                abi = "x86";
-                break;
-            case "3":
-                abi = "arm64-v8a";
-                break;
-            case "4":
-                abi = "armeabi-v7a";
-                break;
+        System.out.print("Select [1]: ");
+        String archChoice = scanner.nextLine().trim();
+        String abi = archChoice.equals("2") ? "x86" : "x86_64";
+
+        System.out.println("\n" + CYAN + "Image Type:" + RESET);
+        System.out.println(" [1] Google APIs (with Google Play Services)");
+        System.out.println(" [2] AOSP (Android Open Source Project)");
+        System.out.print("Select [1]: ");
+        String typeChoice = scanner.nextLine().trim();
+        String imageType = typeChoice.equals("2") ? "android" : "google_apis";
+
+        String packageName = String.format("system-images;android-%s;%s;%s", apiLevel, imageType, abi);
+
+        System.out.println("\n" + CYAN + "Device Model:" + RESET);
+        System.out.println(" Enter device ID (e.g., pixel_5, pixel_6, Nexus_5)");
+        System.out.print("Device [pixel_5]: ");
+        String deviceId = scanner.nextLine().trim();
+        if (deviceId.isEmpty()) {
+            deviceId = "pixel_5";
         }
 
         // Check if system image is installed
-        String packageName = String.format("system-images;android-%s;%s;%s", apiLevel, imageType, abi);
         if (!isSystemImageInstalled(packageName)) {
             System.out.println(RED + "\nSystem image not installed!" + RESET);
             System.out.println("Package: " + packageName);
@@ -450,74 +279,65 @@ public class avidia {
             String installChoice = scanner.nextLine().trim().toLowerCase();
             
             if (installChoice.equals("yes") || installChoice.equals("y")) {
-                installSDKPackageProcess(packageName);
+                installSDKPackage(packageName);
             } else {
                 System.out.println(YELLOW + "AVD creation cancelled." + RESET);
                 return;
             }
         }
 
-        // Device Profile
-        System.out.println("\n" + CYAN + "Device Profile:" + RESET);
-        System.out.println("------------------------------------------------");
-        int j = 1;
-        for (Map.Entry<String, String> entry : DEVICE_PROFILES.entrySet()) {
-            if (j <= 20) { // Show first 20 devices
-                System.out.printf(" [%2d] %s\n", j, entry.getKey());
-            }
-            j++;
-        }
-        System.out.println(" [99] Enter custom device ID");
-        System.out.print("\nSelect device profile [14 for Pixel 4]: ");
-        String deviceChoice = scanner.nextLine().trim();
-
-        String deviceId = "pixel_4"; // Default
-        if (deviceChoice.equals("99")) {
-            System.out.print("Enter custom device ID (e.g., 'Nexus_5'): ");
-            deviceId = scanner.nextLine().trim();
-        } else if (!deviceChoice.isEmpty()) {
-            try {
-                int choice = Integer.parseInt(deviceChoice);
-                int idx = 1;
-                for (Map.Entry<String, String> entry : DEVICE_PROFILES.entrySet()) {
-                    if (idx == choice) {
-                        deviceId = entry.getValue();
-                        System.out.println(GREEN + "Selected: " + entry.getKey() + RESET);
-                        break;
-                    }
-                    idx++;
-                }
-            } catch (NumberFormatException e) {
-                System.out.println(YELLOW + "Using default: Pixel 4" + RESET);
-            }
-        }
-
-        // Summary
         System.out.println("\n" + CYAN + "================================================" + RESET);
         System.out.println(BOLD + "        CONFIGURATION SUMMARY             " + RESET);
         System.out.println(CYAN + "================================================" + RESET);
         System.out.println(" Name       : " + GREEN + avdName + RESET);
         System.out.println(" API Level  : " + GREEN + apiLevel + RESET);
-        System.out.println(" Image Type : " + GREEN + imageType + RESET);
-        System.out.println(" Architecture: " + GREEN + abi + RESET);
-        System.out.println(" Device     : " + GREEN + deviceId + RESET);
         System.out.println(" Package    : " + GREEN + packageName + RESET);
+        System.out.println(" Device     : " + GREEN + deviceId + RESET);
         System.out.println(CYAN + "================================================" + RESET);
 
         System.out.print("\nCreate virtual device? (yes/no): ");
         String confirm = scanner.nextLine().trim().toLowerCase();
 
         if (confirm.equals("yes") || confirm.equals("y")) {
-            createAVDProcessDirect(avdName, packageName, deviceId);
+            createAVD(avdName, packageName, deviceId);
         } else {
             System.out.println(YELLOW + "Device creation cancelled." + RESET);
         }
     }
 
-    private static void createAVDProcessDirect(String avdName, String packageName, String deviceId) {
+    private static void createAVDTUI(String avdName) {
+        // Simple create for command-line usage
+        Scanner scanner = new Scanner(System.in);
+        
+        System.out.println("Creating AVD: " + avdName);
+        System.out.print("Enter API level [34]: ");
+        String apiLevel = scanner.nextLine().trim();
+        if (apiLevel.isEmpty()) apiLevel = "34";
+        
+        String packageName = String.format("system-images;android-%s;google_apis;x86_64", apiLevel);
+        
+        System.out.print("Enter device ID [pixel_5]: ");
+        String deviceId = scanner.nextLine().trim();
+        if (deviceId.isEmpty()) deviceId = "pixel_5";
+        
+        createAVD(avdName, packageName, deviceId);
+        scanner.close();
+    }
+
+    private static void createAVD(String avdName, String packageName, String deviceId) {
         System.out.println(CYAN + "\nCreating virtual device: " + avdName + RESET);
 
         try {
+            // Check if system image is installed
+            if (!isSystemImageInstalled(packageName)) {
+                System.out.println(RED + "System image not installed!" + RESET);
+                System.out.println("Package: " + packageName);
+                System.out.println("Install it first with: avidia install-sdk " + 
+                    packageName.replace("system-images;android-", "").split(";")[0]);
+                return;
+            }
+
+            // Create AVD menggunakan avdmanager langsung
             List<String> command = new ArrayList<>();
             command.add(sdkPath + "/cmdline-tools/latest/bin/avdmanager");
             command.add("create");
@@ -530,6 +350,12 @@ public class avidia {
             command.add(deviceId);
 
             ProcessBuilder pb = new ProcessBuilder(command);
+            
+            // Set environment variables
+            Map<String, String> env = pb.environment();
+            env.put("ANDROID_HOME", sdkPath);
+            env.put("ANDROID_SDK_ROOT", sdkPath);
+            
             pb.redirectErrorStream(true);
             Process process = pb.start();
 
@@ -551,7 +377,7 @@ public class avidia {
             int exitCode = process.waitFor();
             if (exitCode == 0) {
                 System.out.println(GREEN + "\nVirtual device created successfully." + RESET);
-                System.out.println("Start with: " + CYAN + "avidia start-perf " + avdName + RESET);
+                System.out.println("Start with: " + CYAN + "avidia start " + avdName + RESET);
             } else {
                 System.err.println(RED + "Failed to create virtual device." + RESET);
             }
@@ -561,19 +387,17 @@ public class avidia {
         }
     }
 
-    private static void createAVDProcess(String avdName, String apiLevel, String abi, String deviceProfile, String storage) {
-        // Overload for backward compatibility
-        String packageName = String.format("system-images;android-%s;google_apis;%s", apiLevel, abi);
-        createAVDProcessDirect(avdName, packageName, deviceProfile);
-    }
-
     private static boolean isSystemImageInstalled(String packageName) {
         try {
             ProcessBuilder pb = new ProcessBuilder(
                 sdkPath + "/cmdline-tools/latest/bin/sdkmanager",
                 "--list_installed"
             );
-
+            
+            Map<String, String> env = pb.environment();
+            env.put("ANDROID_HOME", sdkPath);
+            env.put("ANDROID_SDK_ROOT", sdkPath);
+            
             Process process = pb.start();
             BufferedReader reader = new BufferedReader(
                 new InputStreamReader(process.getInputStream())
@@ -594,7 +418,7 @@ public class avidia {
     }
 
     private static void startAVDTUI(Scanner scanner) {
-        List<String> avds = getAvailableAVDsList();
+        List<String> avds = getAvailableAVDs();
         if (avds.isEmpty()) {
             System.out.println(RED + "No AVDs found. Create one first." + RESET);
             return;
@@ -611,7 +435,7 @@ public class avidia {
         try {
             int idx = Integer.parseInt(choice) - 1;
             if (idx >= 0 && idx < avds.size()) {
-                startAVDByName(avds.get(idx));
+                startAVD(avds.get(idx));
             } else {
                 System.out.println(RED + "Invalid selection." + RESET);
             }
@@ -620,7 +444,7 @@ public class avidia {
         }
     }
 
-    private static List<String> getAvailableAVDsList() {
+    private static List<String> getAvailableAVDs() {
         List<String> avds = new ArrayList<>();
         try {
             ProcessBuilder pb = new ProcessBuilder(
@@ -644,7 +468,7 @@ public class avidia {
         return avds;
     }
 
-    private static void startAVDByName(String avdName) {
+    private static void startAVD(String avdName) {
         System.out.println(CYAN + "\nStarting virtual device: " + avdName + RESET);
         System.out.println(YELLOW + "Press Ctrl+C to stop the emulator" + RESET);
 
@@ -658,10 +482,6 @@ public class avidia {
             command.add("-gpu");
             command.add("host");
             command.add("-no-snapshot-load");
-            command.add("-netdelay");
-            command.add("none");
-            command.add("-netspeed");
-            command.add("full");
             
             if (kvm.exists()) {
                 command.add("-qemu");
@@ -680,7 +500,7 @@ public class avidia {
     }
 
     private static void deleteAVDTUI(Scanner scanner) {
-        List<String> avds = getAvailableAVDsList();
+        List<String> avds = getAvailableAVDs();
         if (avds.isEmpty()) {
             System.out.println(RED + "No AVDs found." + RESET);
             return;
@@ -701,7 +521,7 @@ public class avidia {
                 String confirm = scanner.nextLine().trim().toLowerCase();
 
                 if (confirm.equals("yes") || confirm.equals("y")) {
-                    deleteAVDByName(avds.get(idx));
+                    deleteAVD(avds.get(idx));
                 } else {
                     System.out.println(YELLOW + "Deletion cancelled." + RESET);
                 }
@@ -713,7 +533,7 @@ public class avidia {
         }
     }
 
-    private static void deleteAVDByName(String avdName) {
+    private static void deleteAVD(String avdName) {
         System.out.println(CYAN + "\nDeleting virtual device: " + avdName + RESET);
 
         try {
@@ -722,6 +542,10 @@ public class avidia {
                 "delete", "avd",
                 "-n", avdName
             );
+            
+            Map<String, String> env = pb.environment();
+            env.put("ANDROID_HOME", sdkPath);
+            env.put("ANDROID_SDK_ROOT", sdkPath);
 
             Process process = pb.start();
             int exitCode = process.waitFor();
@@ -737,157 +561,74 @@ public class avidia {
         }
     }
 
-    private static void manageSDKTUI(Scanner scanner) {
+    private static void installImageTUI(Scanner scanner) {
         System.out.println(YELLOW + "\n================================================" + RESET);
-        System.out.println(BOLD + "           SDK PACKAGE MANAGER               " + RESET);
-        System.out.println(YELLOW + "================================================" + RESET);
-        System.out.println(GREEN + " [1]" + RESET + " List installed packages");
-        System.out.println(GREEN + " [2]" + RESET + " List available packages");
-        System.out.println(GREEN + " [3]" + RESET + " Update all packages");
-        System.out.println(GREEN + " [0]" + RESET + " Back to main menu");
-        System.out.println(YELLOW + "================================================" + RESET);
-        System.out.print("\nSelect operation: ");
-
-        String choice = scanner.nextLine().trim();
-
-        switch (choice) {
-            case "1":
-                executeSDKManager("--list_installed");
-                break;
-            case "2":
-                executeSDKManager("--list");
-                break;
-            case "3":
-                executeSDKManager("--update");
-                break;
-        }
-    }
-
-    private static void executeSDKManager(String command) {
-        try {
-            ProcessBuilder pb = new ProcessBuilder(
-                sdkPath + "/cmdline-tools/latest/bin/sdkmanager",
-                command
-            );
-
-            pb.inheritIO();
-            Process process = pb.start();
-
-            if (!command.equals("--list") && !command.equals("--list_installed")) {
-                OutputStream os = process.getOutputStream();
-                os.write("y\n".getBytes());
-                os.flush();
-                os.close();
-            }
-
-            process.waitFor();
-
-        } catch (Exception e) {
-            System.err.println(RED + "SDK Manager error: " + e.getMessage() + RESET);
-        }
-    }
-
-    private static void installAdditionalSDKTUI(Scanner scanner) {
-        System.out.println(YELLOW + "\n================================================" + RESET);
-        System.out.println(BOLD + "       INSTALL ADDITIONAL SDK PACKAGES        " + RESET);
+        System.out.println(BOLD + "       INSTALL SYSTEM IMAGE PACKAGE        " + RESET);
         System.out.println(YELLOW + "================================================" + RESET);
 
-        System.out.println("\n" + CYAN + "Available Android Versions (API Levels):" + RESET);
-        int i = 1;
+        System.out.println("\n" + CYAN + "Android Version:" + RESET);
         for (Map.Entry<String, String> entry : ANDROID_VERSIONS.entrySet()) {
-            System.out.printf(" [%2d] Android %-6s (API %s)\n", i, entry.getKey(), entry.getValue());
-            i++;
+            System.out.printf("  Android %-5s (API %s)\n", entry.getKey(), entry.getValue());
         }
 
-        System.out.print("\nSelect Android version number: ");
-        String versionChoice = scanner.nextLine().trim();
-
-        String apiLevel = "34";
-        if (!versionChoice.isEmpty()) {
-            try {
-                int choice = Integer.parseInt(versionChoice);
-                int idx = 1;
-                for (Map.Entry<String, String> entry : ANDROID_VERSIONS.entrySet()) {
-                    if (idx == choice) {
-                        apiLevel = entry.getValue();
-                        System.out.println(GREEN + "Selected: Android " + entry.getKey() + " (API " + apiLevel + ")" + RESET);
-                        break;
-                    }
-                    idx++;
-                }
-            } catch (NumberFormatException e) {
-                System.out.println(YELLOW + "Using default: Android 14 (API 34)" + RESET);
-            }
+        System.out.print("\nEnter API level (e.g., 34): ");
+        String apiLevel = scanner.nextLine().trim();
+        
+        if (apiLevel.isEmpty()) {
+            System.out.println(YELLOW + "Installation cancelled." + RESET);
+            return;
         }
 
-        System.out.println("\n" + CYAN + "System Image Type:" + RESET);
-        System.out.println(" [1] GMS (Google Mobile Services)");
-        System.out.println(" [2] Google APIs");
-        System.out.println(" [3] AOSP");
-        System.out.print("Select image type [1]: ");
-        String imageChoice = scanner.nextLine().trim();
-
-        String imageType = "google_apis_playstore";
-        switch (imageChoice) {
-            case "2":
-                imageType = "google_apis";
-                break;
-            case "3":
-                imageType = "android";
-                break;
+        System.out.println("\n" + CYAN + "Image Type:" + RESET);
+        System.out.println(" [1] google_apis (with Google Play Services)");
+        System.out.println(" [2] android (AOSP - pure Android)");
+        System.out.println(" [3] google_apis_playstore (with Google Play Store)");
+        System.out.print("Select [1]: ");
+        String typeChoice = scanner.nextLine().trim();
+        
+        String imageType = "google_apis";
+        if (typeChoice.equals("2")) {
+            imageType = "android";
+        } else if (typeChoice.equals("3")) {
+            imageType = "google_apis_playstore";
         }
 
         System.out.println("\n" + CYAN + "Architecture:" + RESET);
-        System.out.println(" [1] x86_64");
-        System.out.println(" [2] x86");
-        System.out.println(" [3] arm64-v8a");
-        System.out.println(" [4] armeabi-v7a");
-        System.out.print("Select architecture [1]: ");
-        String abiChoice = scanner.nextLine().trim();
-
-        String abi = "x86_64";
-        switch (abiChoice) {
-            case "2":
-                abi = "x86";
-                break;
-            case "3":
-                abi = "arm64-v8a";
-                break;
-            case "4":
-                abi = "armeabi-v7a";
-                break;
-        }
+        System.out.println(" [1] x86_64 (64-bit, recommended)");
+        System.out.println(" [2] x86 (32-bit)");
+        System.out.print("Select [1]: ");
+        String archChoice = scanner.nextLine().trim();
+        String abi = archChoice.equals("2") ? "x86" : "x86_64";
 
         String packageName = String.format("system-images;android-%s;%s;%s", apiLevel, imageType, abi);
 
         System.out.println("\nPackage to install: " + GREEN + packageName + RESET);
-
         System.out.print("\nProceed with installation? (yes/no): ");
         String confirm = scanner.nextLine().trim().toLowerCase();
 
         if (confirm.equals("yes") || confirm.equals("y")) {
-            installSDKPackageProcess(packageName);
+            installSDKPackage(packageName);
         } else {
             System.out.println(YELLOW + "Installation cancelled." + RESET);
         }
     }
 
-    private static void installSDKPackageProcess(String packageName) {
+    private static void installSDKPackage(String packageName) {
         System.out.println(CYAN + "\nInstalling package: " + packageName + RESET);
+        System.out.println("This may take several minutes...");
 
         try {
-            ProcessBuilder pb = new ProcessBuilder(
-                sdkPath + "/cmdline-tools/latest/bin/sdkmanager",
-                packageName
-            );
+            // Gunakan bash shell untuk menjalankan sdkmanager dengan environment yang tepat
+            List<String> command = new ArrayList<>();
+            command.add("bash");
+            command.add("-c");
+            command.add("export ANDROID_HOME='" + sdkPath + "' && " +
+                       "export ANDROID_SDK_ROOT='" + sdkPath + "' && " +
+                       "echo 'y' | '" + sdkPath + "/cmdline-tools/latest/bin/sdkmanager' --sdk_root='" + sdkPath + "' '" + packageName + "'");
 
+            ProcessBuilder pb = new ProcessBuilder(command);
             pb.redirectErrorStream(true);
             Process process = pb.start();
-
-            OutputStream os = process.getOutputStream();
-            os.write("y\n".getBytes());
-            os.flush();
-            os.close();
 
             BufferedReader reader = new BufferedReader(
                 new InputStreamReader(process.getInputStream())
@@ -903,10 +644,49 @@ public class avidia {
                 System.out.println(GREEN + "\nPackage installed successfully." + RESET);
             } else {
                 System.err.println(RED + "Package installation failed." + RESET);
+                System.err.println("Exit code: " + exitCode);
+                
+                // Coba alternatif: jalankan dengan sudo jika diperlukan
+                System.out.println("\nTrying alternative installation method...");
+                installSDKPackageAlternative(packageName);
             }
 
         } catch (Exception e) {
             System.err.println(RED + "Installation error: " + e.getMessage() + RESET);
+        }
+    }
+    
+    private static void installSDKPackageAlternative(String packageName) {
+        try {
+            // Coba jalankan melalui avidia bash script
+            List<String> command = new ArrayList<>();
+            command.add("avidia");
+            command.add("install-sdk");
+            
+            // Parse package name untuk mendapatkan arguments
+            // Format: system-images;android-34;google_apis;x86_64
+            String[] parts = packageName.split(";");
+            if (parts.length >= 2) {
+                String apiLevel = parts[1].replace("android-", "");
+                command.add(apiLevel);
+                
+                if (parts.length >= 3) {
+                    command.add(parts[2]);
+                }
+                
+                if (parts.length >= 4) {
+                    command.add(parts[3]);
+                }
+            }
+            
+            ProcessBuilder pb = new ProcessBuilder(command);
+            pb.inheritIO();
+            Process process = pb.start();
+            process.waitFor();
+            
+        } catch (Exception e) {
+            System.err.println(RED + "Alternative installation also failed: " + e.getMessage() + RESET);
+            System.err.println("Please run manually: sudo avidia install-sdk <api-level>");
         }
     }
 
@@ -917,6 +697,7 @@ public class avidia {
 
         System.out.println(CYAN + "Android SDK:" + RESET);
         System.out.println(" Path: " + GREEN + sdkPath + RESET);
+        System.out.println(" User: " + GREEN + userName + RESET);
 
         System.out.println("\n" + CYAN + "Java Runtime:" + RESET);
         System.out.println(" Version: " + GREEN + System.getProperty("java.version") + RESET);
@@ -927,8 +708,8 @@ public class avidia {
         System.out.println(" Architecture: " + GREEN + System.getProperty("os.arch") + RESET);
 
         System.out.println("\n" + CYAN + "Environment:" + RESET);
-        System.out.println(" User: " + GREEN + System.getProperty("user.name") + RESET);
-        System.out.println(" Home: " + GREEN + System.getProperty("user.home") + RESET);
+        System.out.println(" ANDROID_HOME: " + GREEN + System.getenv("ANDROID_HOME") + RESET);
+        System.out.println(" ANDROID_SDK_ROOT: " + GREEN + System.getenv("ANDROID_SDK_ROOT") + RESET);
 
         // Check KVM
         File kvm = new File("/dev/kvm");
